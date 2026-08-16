@@ -6,15 +6,15 @@ image:
   tag: "latest"
 
 imagePullSecrets:
-  - name: ghcr-login-secret # 👈 อย่าลืมสร้าง Secret ใน Kube ก่อนนะ
+  - name: ghcr-secret
 
 nameOverride: ""
 fullnameOverride: ""
 
 serviceAccount:
-  create: true
+  create: false
   annotations: {}
-  name: ""
+  name: "vertex-sa"
 
 podAnnotations: {}
 

@@ -58,15 +58,26 @@ jobs:
         with:
           version: 'v3.12.0'
 
-      - name: Create kubeconfig
+      - name: Create kubeconfig from secret
         run: |
           mkdir -p ~/.kube
-          echo "${{ secrets.KUBECONFIG }}" > ~/.kube/config
+          echo "${{ secrets.KUBECONFIG_CONTENT }}" > ~/.kube/config
           chmod 600 ~/.kube/config
 
       - name: Deploy using Helm
+        id: helm_deploy
         run: |
           helm upgrade --install pet-service ./helm/pet-service \
             --namespace default \
             --set image.repository=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }} \
-            --set image.tag=sha-${{ github.sha }}
+            --set image.tag=sha-${{ github.sha }} \
+            --set forceTimestamp=$(date +%s) | tee helm-output.txt
+
+      - name: Rollout restart if no change
+        run: |
+          if grep -q 'unchanged' helm-output.txt; then
+            echo "No changes detected, restarting deployment..."
+            kubectl rollout restart deployment pet-service -n default
+          else
+            echo "Changes detected, no restart required."
+          fi

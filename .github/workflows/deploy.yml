@@ -76,7 +76,7 @@ jobs:
       - name: Verify cluster access
         run: |
           kubectl version --client
-          kubectl cluster-info
+          kubectl get pods -n vertex
 
       - name: Install Helm
         uses: azure/setup-helm@v4

@@ -59,22 +59,39 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
       
-      - name: Install Helm
-        uses: azure/setup-helm@v4
-        with:
-          version: 'v3.12.0'
-
       - name: Create kubeconfig from secret
         run: |
           mkdir -p ~/.kube
           echo "${{ secrets.KUBECONFIG_CONTENT }}" > ~/.kube/config
           chmod 600 ~/.kube/config
 
+      - name: Set KUBECONFIG environment variable
+        run: echo "KUBECONFIG=$HOME/.kube/config" >> $GITHUB_ENV
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'v1.28.0'
+
+      - name: Verify cluster access
+        run: |
+          kubectl version --client
+          kubectl cluster-info
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: 'v3.12.0'
+
+      - name: Set default namespace in kubeconfig
+        run: |
+          kubectl config set-context --current --namespace vertex
+
       - name: Deploy using Helm
         id: helm_deploy
         run: |
           helm upgrade --install pet-service ./helm/pet-service \
-            --namespace default \
+            --namespace vertex \
             --set image.repository=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }} \
             --set image.tag=sha-${{ github.sha }} \
             --set forceTimestamp=$(date +%s) | tee helm-output.txt
@@ -83,7 +100,7 @@ jobs:
         run: |
           if grep -q 'unchanged' helm-output.txt; then
             echo "No changes detected, restarting deployment..."
-            kubectl rollout restart deployment pet-service -n default
+            kubectl rollout restart deployment pet-service -n vertex
           else
             echo "Changes detected, no restart required."
           fi

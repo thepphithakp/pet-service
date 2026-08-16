@@ -1,0 +1,15 @@
+# Binaries
+pet-service
+
+# IDE files
+.idea/
+
+# OS files
+.DS_Store
+
+# Patch and tar files
+*.patch
+*.tar
+
+# Env
+.env

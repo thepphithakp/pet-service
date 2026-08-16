@@ -13,3 +13,4 @@ pet-service
 
 # Env
 .env
+kubeconfig-vertex.yaml

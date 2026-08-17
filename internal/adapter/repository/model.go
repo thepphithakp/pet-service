@@ -87,7 +87,7 @@ func PermissionModelFromDomain(p domain.PetPermission) PermissionModel {
 type CaregiverModel struct {
 	ID          uuid.UUID         `gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
 	PetID       uuid.UUID         `gorm:"type:uuid;not null;uniqueIndex:idx_pet_user"`
-	UserID      uuid.UUID         `gorm:"type:uuid;not null;uniqueIndex:idx_pet_user"`
+	UserID      uuid.UUID         `gorm:"type:uuid;index;not null;uniqueIndex:idx_pet_user"`
 	Permissions []PermissionModel `gorm:"many2many:caregiver_permissions;constraint:OnDelete:CASCADE;"`
 	CreatedAt   time.Time
 	UpdatedAt   time.Time

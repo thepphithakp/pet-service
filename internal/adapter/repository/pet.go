@@ -23,7 +23,7 @@ func (r *GORMPetRepository) FindAllForUser(ctx context.Context, userID uuid.UUID
     err := r.db.WithContext(ctx).
         Preload("Caregivers.Permissions").
         Where("owner_id = ?", userID).
-        Or("id IN (SELECT pet_id FROM pet_caregivers WHERE user_id = ? AND deleted_at IS NULL)", userID).
+        Or("EXISTS (SELECT 1 FROM pet_caregivers WHERE pet_caregivers.pet_id = pets.id AND pet_caregivers.user_id = ? AND pet_caregivers.deleted_at IS NULL)", userID).
         Find(&models).Error
     if err != nil {
         return nil, err

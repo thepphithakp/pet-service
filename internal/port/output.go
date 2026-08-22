@@ -37,8 +37,10 @@ type LitterRepository interface {
 	Delete(ctx context.Context, logID uuid.UUID) error
 }
 
-// PermissionRepository is the driven port for permission master data.
+// PermissionRepository อ่าน master data ของสิทธิ์ caregiver
+//
+// ไม่มี Seed แล้ว — การ seed ย้ายไป db/codeowned/R__0010_pet_permissions.sql
+// ซึ่ง Flyway จัดการให้ (ตารางนี้เป็นชั้น A code-owned ไม่เปิดให้ backoffice แก้)
 type PermissionRepository interface {
 	FindAll(ctx context.Context) ([]domain.PetPermission, error)
-	Seed(ctx context.Context, permissions []domain.PetPermission) error
 }

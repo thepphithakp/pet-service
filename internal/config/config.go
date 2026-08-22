@@ -25,6 +25,17 @@ type DBConfig struct {
 	Name     string
 	SSLMode  string
 	TimeZone string
+
+	// SearchPath กำหนด schema ที่ใช้ค้นหาตาราง
+	//
+	// ⚠️ ระหว่างย้ายตารางจาก public ไป pet ต้องตั้งเป็น "pet,public" และ
+	//    deploy app ตัวนี้ให้ขึ้นก่อน แล้วค่อยรัน db/bootstrap/001_move_to_pet_schema.sql
+	//    ถ้าย้ายก่อนที่ app จะรู้จัก schema pet จะได้
+	//    relation "pets" does not exist ทั้งระบบทันที
+	//
+	//    เมื่อ auth-service และ event-service ย้าย schema เสร็จแล้ว
+	//    ค่อยเปลี่ยนเป็น "pet" อย่างเดียว
+	SearchPath string
 }
 
 type JWTConfig struct {
@@ -36,16 +47,20 @@ type JWTConfig struct {
 
 // DSN คืน connection string สำหรับ gorm postgres driver
 func (d DBConfig) DSN() string {
-	return fmt.Sprintf(
+	dsn := fmt.Sprintf(
 		"host=%s user=%s password=%s dbname=%s port=%s sslmode=%s TimeZone=%s",
 		d.Host, d.User, d.Password, d.Name, d.Port, d.SSLMode, d.TimeZone,
 	)
+	if d.SearchPath != "" {
+		dsn += " search_path=" + d.SearchPath
+	}
+	return dsn
 }
 
 // Redacted คืน DSN ที่ซ่อนรหัสผ่าน สำหรับใส่ใน log
 func (d DBConfig) Redacted() string {
-	return fmt.Sprintf("host=%s user=%s dbname=%s port=%s sslmode=%s",
-		d.Host, d.User, d.Name, d.Port, d.SSLMode)
+	return fmt.Sprintf("host=%s user=%s dbname=%s port=%s sslmode=%s search_path=%s",
+		d.Host, d.User, d.Name, d.Port, d.SSLMode, d.SearchPath)
 }
 
 // Load อ่านค่าจาก environment พร้อม default ที่ตรงกับพฤติกรรมเดิมทุกตัว
@@ -60,6 +75,8 @@ func Load() (Config, error) {
 			Name:     os.Getenv("DB_NAME"),
 			SSLMode:  env("DB_SSLMODE", "disable"),
 			TimeZone: env("DB_TIMEZONE", "Asia/Bangkok"),
+			// default "pet,public" เพื่อให้ deploy ได้ทั้งก่อนและหลังย้าย schema
+			SearchPath: env("DB_SEARCH_PATH", "pet,public"),
 		},
 		JWT: JWTConfig{
 			PublicKeyPEM:  os.Getenv("JWT_PUBLIC_KEY"),

@@ -35,6 +35,10 @@ func TestLoad_Defaults(t *testing.T) {
 	if cfg.EventServiceURL != "http://event-service.vertex.svc.cluster.local:4002" {
 		t.Fatalf("EventServiceURL = %q", cfg.EventServiceURL)
 	}
+	// default ต้องครอบทั้งก่อนและหลังย้าย schema เพื่อให้ deploy ได้โดยไม่พัง
+	if cfg.DB.SearchPath != "pet,public" {
+		t.Fatalf("SearchPath = %q ต้องการ pet,public", cfg.DB.SearchPath)
+	}
 }
 
 func TestLoad_MissingRequired(t *testing.T) {
@@ -60,6 +64,18 @@ func TestDSN_MatchesLegacyFormat(t *testing.T) {
 		Port: "5432", SSLMode: "disable", TimeZone: "Asia/Bangkok",
 	}
 	want := "host=pg user=u password=p dbname=db port=5432 sslmode=disable TimeZone=Asia/Bangkok"
+	if got := d.DSN(); got != want {
+		t.Fatalf("DSN =\n%q\nต้องการ\n%q", got, want)
+	}
+}
+
+func TestDSN_WithSearchPath(t *testing.T) {
+	d := DBConfig{
+		Host: "pg", User: "u", Password: "p", Name: "db",
+		Port: "5432", SSLMode: "disable", TimeZone: "Asia/Bangkok",
+		SearchPath: "pet,public",
+	}
+	want := "host=pg user=u password=p dbname=db port=5432 sslmode=disable TimeZone=Asia/Bangkok search_path=pet,public"
 	if got := d.DSN(); got != want {
 		t.Fatalf("DSN =\n%q\nต้องการ\n%q", got, want)
 	}

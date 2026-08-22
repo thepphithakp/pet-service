@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log"
 
 	"github.com/vertex/pet-service/internal/bootstrap"
@@ -18,9 +19,10 @@ func main() {
 		log.Fatal(err)
 	}
 
-	// TODO(Phase 2.5): ลบออกเมื่อ Flyway migration job ทำงานแทนแล้ว
-	if err := bootstrap.MigrateAndSeedLegacy(db); err != nil {
-		log.Fatalf("AutoMigrate ล้มเหลว: %v", err)
+	// schema จัดการโดย Flyway แล้ว ไม่ใช่ AutoMigrate
+	// ตรงนี้แค่ยืนยันว่า migration รันครบก่อนรับ request
+	if err := bootstrap.AssertSchemaVersion(context.Background(), db); err != nil {
+		log.Fatal(err)
 	}
 
 	publicKey, err := bootstrap.LoadPublicKey(cfg.JWT)

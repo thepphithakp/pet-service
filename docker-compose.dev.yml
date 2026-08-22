@@ -1,0 +1,76 @@
+# =============================================================================
+# Local development stack
+# =============================================================================
+# ใช้ `make db-up` (postgres + migration) หรือ `make docker-dev` (ทั้ง stack)
+#
+# แทนที่ docker-compose.yml เดิมที่ใช้งานไม่ได้:
+#   - Dockerfile.dev ชี้ไป main.go ที่ root ซึ่งไม่มีอยู่ (อยู่ที่ cmd/server)
+#   - map port 8081:8081 แต่ app default คือ 4001 และ helm ตั้ง 8080
+#     → ตอนนี้ใช้ 4001 เหมือนกันหมดทั้ง compose / helm / โค้ด
+# =============================================================================
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: vertex
+      POSTGRES_PASSWORD: vertex
+      POSTGRES_DB: vertex_pet
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vertex -d vertex_pet"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+  flyway:
+    image: flyway/flyway:11-alpine
+    command: migrate
+    volumes:
+      - ./db/migration:/flyway/sql/migration:ro
+      - ./db/codeowned:/flyway/sql/codeowned:ro
+      - ./db/seed:/flyway/sql/seed:ro
+    environment:
+      FLYWAY_URL: jdbc:postgresql://postgres:5432/vertex_pet
+      FLYWAY_USER: vertex
+      FLYWAY_PASSWORD: vertex
+      FLYWAY_SCHEMAS: pet
+      FLYWAY_DEFAULT_SCHEMA: pet
+      FLYWAY_TABLE: flyway_schema_history
+      # local เท่านั้นที่รวม seed/ เข้ามาด้วย
+      FLYWAY_LOCATIONS: filesystem:/flyway/sql/migration,filesystem:/flyway/sql/codeowned,filesystem:/flyway/sql/seed
+      FLYWAY_BASELINE_ON_MIGRATE: "true"
+      FLYWAY_BASELINE_VERSION: "1"
+      FLYWAY_VALIDATE_ON_MIGRATE: "true"
+      FLYWAY_CLEAN_DISABLED: "true"
+      FLYWAY_CONNECT_RETRIES: "20"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  pet-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    ports:
+      - "4001:4001"
+    environment:
+      PORT: "4001"
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_USER: vertex
+      DB_PASSWORD: vertex
+      DB_NAME: vertex_pet
+      DB_SSLMODE: disable
+      DB_SEARCH_PATH: pet
+      EVENT_SERVICE_URL: http://event-service:4002
+      JWT_PUBLIC_KEY_PATH: keys/public.pem
+    depends_on:
+      flyway:
+        condition: service_completed_successfully
+
+volumes:
+  pgdata:

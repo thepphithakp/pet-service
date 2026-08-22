@@ -43,3 +43,80 @@ jobs:
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@latest
           govulncheck ./...
+
+  migration:
+    name: Migration check
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: vertex
+          POSTGRES_PASSWORD: vertex
+          POSTGRES_DB: vertex_pet
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U vertex"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # ตรวจว่า migration รันได้บน database เปล่า
+      - name: Flyway migrate
+        run: |
+          docker run --rm --network host \
+            -v "$PWD/db/migration:/flyway/sql/migration:ro" \
+            -v "$PWD/db/codeowned:/flyway/sql/codeowned:ro" \
+            -e FLYWAY_URL=jdbc:postgresql://localhost:5432/vertex_pet \
+            -e FLYWAY_USER=vertex -e FLYWAY_PASSWORD=vertex \
+            -e FLYWAY_SCHEMAS=pet -e FLYWAY_DEFAULT_SCHEMA=pet \
+            -e FLYWAY_LOCATIONS=filesystem:/flyway/sql/migration,filesystem:/flyway/sql/codeowned \
+            -e FLYWAY_BASELINE_ON_MIGRATE=true -e FLYWAY_BASELINE_VERSION=1 \
+            -e FLYWAY_CLEAN_DISABLED=true \
+            flyway/flyway:11-alpine migrate
+
+      # รันซ้ำต้องไม่พัง และ R__ ต้อง idempotent
+      - name: Flyway migrate ซ้ำ (ต้อง idempotent)
+        run: |
+          docker run --rm --network host \
+            -v "$PWD/db/migration:/flyway/sql/migration:ro" \
+            -v "$PWD/db/codeowned:/flyway/sql/codeowned:ro" \
+            -e FLYWAY_URL=jdbc:postgresql://localhost:5432/vertex_pet \
+            -e FLYWAY_USER=vertex -e FLYWAY_PASSWORD=vertex \
+            -e FLYWAY_SCHEMAS=pet -e FLYWAY_DEFAULT_SCHEMA=pet \
+            -e FLYWAY_LOCATIONS=filesystem:/flyway/sql/migration,filesystem:/flyway/sql/codeowned \
+            -e FLYWAY_CLEAN_DISABLED=true \
+            flyway/flyway:11-alpine migrate
+
+      - name: Flyway validate + info
+        run: |
+          docker run --rm --network host \
+            -v "$PWD/db/migration:/flyway/sql/migration:ro" \
+            -v "$PWD/db/codeowned:/flyway/sql/codeowned:ro" \
+            -e FLYWAY_URL=jdbc:postgresql://localhost:5432/vertex_pet \
+            -e FLYWAY_USER=vertex -e FLYWAY_PASSWORD=vertex \
+            -e FLYWAY_SCHEMAS=pet -e FLYWAY_DEFAULT_SCHEMA=pet \
+            -e FLYWAY_LOCATIONS=filesystem:/flyway/sql/migration,filesystem:/flyway/sql/codeowned \
+            flyway/flyway:11-alpine validate
+          docker run --rm --network host \
+            -v "$PWD/db/migration:/flyway/sql/migration:ro" \
+            -v "$PWD/db/codeowned:/flyway/sql/codeowned:ro" \
+            -e FLYWAY_URL=jdbc:postgresql://localhost:5432/vertex_pet \
+            -e FLYWAY_USER=vertex -e FLYWAY_PASSWORD=vertex \
+            -e FLYWAY_SCHEMAS=pet -e FLYWAY_DEFAULT_SCHEMA=pet \
+            -e FLYWAY_LOCATIONS=filesystem:/flyway/sql/migration,filesystem:/flyway/sql/codeowned \
+            flyway/flyway:11-alpine info
+
+      # gate สำคัญที่สุดของเฟสนี้: schema ที่ Flyway สร้าง ต้องตรงกับ GORM model
+      # เพราะไม่มี AutoMigrate คอยประสานให้อีกแล้ว
+      - name: Schema ตรงกับ GORM model
+        env:
+          TEST_DATABASE_URL: postgres://vertex:vertex@localhost:5432/vertex_pet?sslmode=disable&search_path=pet
+        run: go test -count=1 -tags=integration ./internal/bootstrap/... -run TestSchema -v

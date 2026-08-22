@@ -116,11 +116,3 @@ func (r *GORMPermissionRepository) FindAll(ctx context.Context) ([]domain.PetPer
 	}
 	return result, nil
 }
-
-func (r *GORMPermissionRepository) Seed(ctx context.Context, permissions []domain.PetPermission) error {
-	for _, p := range permissions {
-		m := model.PermissionFromDomain(p)
-		r.db.WithContext(ctx).FirstOrCreate(&m, model.Permission{ID: p.ID})
-	}
-	return nil
-}

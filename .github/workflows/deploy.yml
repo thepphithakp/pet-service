@@ -28,10 +28,13 @@ jobs:
         run: go vet ./...
       - name: Test (race)
         run: go test -race -count=1 ./...
+      # ⚠️ .golangci.yml ใช้ config schema version 2 จึงต้องใช้ golangci-lint v2
+      #    action v6 ผูกกับ v1.x ที่ build ด้วย Go 1.23
+      #    อ่านโปรเจกต์ที่ target Go 1.25 ไม่ได้ → CI ล้มทั้ง pipeline
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v6
+        uses: golangci/golangci-lint-action@v8
         with:
-          version: v1.62
+          version: latest
       - name: govulncheck
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@latest

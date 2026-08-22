@@ -23,9 +23,17 @@ fmt: ## gofmt
 vet: ## go vet
 	go vet ./...
 
-lint: ## golangci-lint (ต้องติดตั้งก่อน)
-	@command -v golangci-lint >/dev/null || { echo "ติดตั้งก่อน: brew install golangci-lint"; exit 1; }
-	golangci-lint run ./...
+# ตรึงเวอร์ชันให้ตรงกับที่ CI ใช้ ไม่งั้น lint ผ่านในเครื่องแต่แดงบน CI
+GOLANGCI_VERSION ?= v2.13.1
+
+lint: ## golangci-lint (ใช้ binary ในเครื่องถ้ามี ไม่มีก็ใช้ docker)
+	@if command -v golangci-lint >/dev/null; then \
+		golangci-lint run ./...; \
+	else \
+		echo "ไม่พบ golangci-lint ในเครื่อง — ใช้ docker $(GOLANGCI_VERSION) แทน"; \
+		docker run --rm -v "$(PWD)":/app -w /app \
+			golangci/golangci-lint:$(GOLANGCI_VERSION) golangci-lint run ./...; \
+	fi
 
 tidy: ## go mod tidy + ตรวจว่าไม่มี diff
 	go mod tidy

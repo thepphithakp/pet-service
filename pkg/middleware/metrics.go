@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"errors"
 	"strconv"
 
 	"github.com/gofiber/adaptor/v2"
@@ -59,7 +60,8 @@ func NewMetrics() fiber.Handler {
 		// อ่าน status หลัง c.Next() เพราะ error handler อาจเปลี่ยน status
 		status := c.Response().StatusCode()
 		if err != nil {
-			if fe, ok := err.(*fiber.Error); ok {
+			var fe *fiber.Error
+			if errors.As(err, &fe) {
 				status = fe.Code
 			}
 		}

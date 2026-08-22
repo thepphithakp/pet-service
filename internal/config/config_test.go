@@ -10,7 +10,7 @@ func setDBEnv(t *testing.T) {
 	t.Setenv("DB_HOST", "localhost")
 	t.Setenv("DB_PORT", "5432")
 	t.Setenv("DB_USER", "vertex")
-	t.Setenv("DB_NAME", "vertex_pet")
+	t.Setenv("DB_NAME", "vertex")
 }
 
 func TestLoad_Defaults(t *testing.T) {

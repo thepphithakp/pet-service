@@ -69,7 +69,7 @@ terminationGracePeriodSeconds: 30
 db:
   host: postgres
   port: 5432
-  name: vertex_pet
+  name: vertex
   sslMode: disable
   schema: pet
   # ⚠️ ระหว่างย้าย schema ต้องเป็น "pet,public" และ deploy ค่านี้ให้ขึ้นก่อน

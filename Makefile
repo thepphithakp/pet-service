@@ -35,7 +35,7 @@ test: ## unit test (ไม่ต้องใช้ docker)
 	go test -race -count=1 ./...
 
 test-integration: ## integration test (ต้องมี postgres — ใช้ make db-up ก่อน)
-	TEST_DATABASE_URL="$${TEST_DATABASE_URL:-postgres://vertex:vertex@localhost:5432/vertex_pet?sslmode=disable&search_path=pet}" \
+	TEST_DATABASE_URL="$${TEST_DATABASE_URL:-postgres://vertex:vertex@localhost:5432/vertex?sslmode=disable&search_path=pet}" \
 	go test -race -count=1 -tags=integration ./...
 
 cover: ## test + coverage report

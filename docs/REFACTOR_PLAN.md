@@ -835,7 +835,7 @@ func AssertSchemaVersion(ctx context.Context, db *gorm.DB) error {
 services:
   postgres:
     image: postgres:15-alpine
-    environment: { POSTGRES_USER: vertex, POSTGRES_PASSWORD: vertex, POSTGRES_DB: vertex_pet }
+    environment: { POSTGRES_USER: vertex, POSTGRES_PASSWORD: vertex, POSTGRES_DB: vertex }
     ports: ["5432:5432"]
     healthcheck: { test: ["CMD-SHELL","pg_isready -U vertex"], interval: 2s, retries: 15 }
 
@@ -847,7 +847,7 @@ services:
       - ./db/codeowned:/flyway/sql/codeowned
       - ./db/seed:/flyway/sql/seed
     environment:
-      FLYWAY_URL: jdbc:postgresql://postgres:5432/vertex_pet
+      FLYWAY_URL: jdbc:postgresql://postgres:5432/vertex
       FLYWAY_USER: vertex
       FLYWAY_PASSWORD: vertex
       FLYWAY_SCHEMAS: pet
@@ -1291,7 +1291,7 @@ ALTER TABLE pet.litter_logs VALIDATE CONSTRAINT fk_litter_logs_type;  -- ล็�
 
 **หลังเฟสนี้** — ทั้ง 3 service แยก schema ครบ:
 ```
-vertex_pet
+vertex
 ├── pet    (pets, pet_caregivers, litter_logs, water_logs, mst_*, flyway_schema_history)
 ├── auth   (users, oauth_identities, roles, user_roles, flyway_schema_history)
 ├── event  (event_logs, flyway_schema_history)
@@ -1323,8 +1323,8 @@ vertex_pet
 ### 5.2 ⚠️ ประเด็นสำคัญ: ตอนนี้ 3 service แชร์ database เดียวกัน
 
 ยืนยันจากโค้ด:
-- `docker-compose.yml` — auth-service ใช้ `dbname=vertex_pet` เดียวกับ pet-service
-- `k8s/01-postgres.yaml` — `POSTGRES_DB: vertex_pet` ตัวเดียว
+- `docker-compose.yml` — auth-service ใช้ `dbname=vertex` เดียวกับ pet-service
+- `k8s/01-postgres.yaml` — `POSTGRES_DB: vertex` ตัวเดียว
 - `vertex-auth-service/main.go:121` — `dbConn.AutoMigrate(&User{}, &OAuthIdentity{})`
 - `vertex-event-service/.../event_repo.go:15` — `db.AutoMigrate(&domain.EventLog{})`
 
@@ -1591,7 +1591,7 @@ COPY masterdata /flyway/sql/masterdata
 
 **ข้อ A — ปริมาณข้อมูลใน prod** ยิงคำสั่งนี้แล้วส่งผลลัพธ์มา จะช่วยตัดงานได้เยอะ:
 ```bash
-kubectl exec -n vertex deploy/postgres -- psql -U vertex_admin -d vertex_pet -c "
+kubectl exec -n vertex deploy/postgres -- psql -U vertex_admin -d vertex -c "
 SELECT 'pets' t, count(*) FROM pets
 UNION ALL SELECT 'pet_caregivers', count(*) FROM pet_caregivers
 UNION ALL SELECT 'litter_logs', count(*) FROM litter_logs
@@ -1812,13 +1812,13 @@ STAMP=$(date +%Y%m%d-%H%M%S)
 
 # 1. full logical backup (custom format — restore ทีละตารางได้)
 kubectl exec -n vertex deploy/postgres -- \
-  pg_dump -U vertex_admin -d vertex_pet -Fc --no-owner \
-  > backup/vertex_pet-${STAMP}.dump
+  pg_dump -U vertex_admin -d vertex -Fc --no-owner \
+  > backup/vertex-${STAMP}.dump
 
 # 2. plain SQL อีกชุด (อ่านด้วยตาได้ / grep ได้ตอนฉุกเฉิน)
 kubectl exec -n vertex deploy/postgres -- \
-  pg_dump -U vertex_admin -d vertex_pet --no-owner \
-  | gzip > backup/vertex_pet-${STAMP}.sql.gz
+  pg_dump -U vertex_admin -d vertex --no-owner \
+  | gzip > backup/vertex-${STAMP}.sql.gz
 
 # 3. บันทึก fingerprint ของข้อมูล (§10.3)
 psql "$PROD_DSN" -f db/verify/fingerprint.sql > backup/fingerprint-before-${STAMP}.txt
@@ -1915,7 +1915,7 @@ app ที่มี `search_path=pet,public` จะยังทำงานไ�
 **Rollback ท่าสุดท้าย — restore จาก dump**
 ```bash
 kubectl exec -i -n vertex deploy/postgres -- \
-  pg_restore -U vertex_admin -d vertex_pet --clean --if-exists < backup/vertex_pet-${STAMP}.dump
+  pg_restore -U vertex_admin -d vertex --clean --if-exists < backup/vertex-${STAMP}.dump
 ```
 🚨 จะเสียข้อมูลที่เขียนเข้ามาหลังเวลา backup — ประกาศ maintenance window ก่อนเสมอ
 

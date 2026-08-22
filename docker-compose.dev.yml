@@ -15,13 +15,13 @@ services:
     environment:
       POSTGRES_USER: vertex
       POSTGRES_PASSWORD: vertex
-      POSTGRES_DB: vertex_pet
+      POSTGRES_DB: vertex
     ports:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U vertex -d vertex_pet"]
+      test: ["CMD-SHELL", "pg_isready -U vertex -d vertex"]
       interval: 2s
       timeout: 3s
       retries: 15
@@ -37,7 +37,7 @@ services:
       - ../vertex-migrations/pet/codeowned:/flyway/sql/codeowned:ro
       - ../vertex-migrations/pet/seed:/flyway/sql/seed:ro
     environment:
-      FLYWAY_URL: jdbc:postgresql://postgres:5432/vertex_pet
+      FLYWAY_URL: jdbc:postgresql://postgres:5432/vertex
       FLYWAY_USER: vertex
       FLYWAY_PASSWORD: vertex
       FLYWAY_SCHEMAS: pet
@@ -66,7 +66,7 @@ services:
       DB_PORT: "5432"
       DB_USER: vertex
       DB_PASSWORD: vertex
-      DB_NAME: vertex_pet
+      DB_NAME: vertex
       DB_SSLMODE: disable
       DB_SEARCH_PATH: pet
       EVENT_SERVICE_URL: http://event-service:4002

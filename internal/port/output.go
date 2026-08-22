@@ -45,6 +45,18 @@ type LitterRepository interface {
 	Delete(ctx context.Context, petID, logID uuid.UUID) error
 }
 
+// MasterDataRepository จัดการ master data ที่ backoffice แก้ได้
+type MasterDataRepository interface {
+	FindAll(ctx context.Context, t domain.MasterDataType, includeInactive bool) ([]domain.MasterDataItem, error)
+	FindByCode(ctx context.Context, t domain.MasterDataType, code string) (*domain.MasterDataItem, error)
+	Create(ctx context.Context, t domain.MasterDataType, item domain.MasterDataItem) (*domain.MasterDataItem, error)
+	// Update ใช้ optimistic locking — ถ้า version ไม่ตรงคืน ErrVersionConflict
+	Update(ctx context.Context, t domain.MasterDataType, item domain.MasterDataItem) (*domain.MasterDataItem, error)
+	// CountUsage นับว่ามีข้อมูลจริงอ้างถึงรายการนี้กี่แถว
+	// ใช้เตือนก่อนปิดการใช้งาน
+	CountUsage(ctx context.Context, t domain.MasterDataType, code string) (int64, error)
+}
+
 // CapabilityRepository อ่าน mapping role → capability ของ pet-service
 type CapabilityRepository interface {
 	// HasAny คืน true ถ้า role ใดใน roles มี capability ใดใน capabilities

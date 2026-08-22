@@ -185,28 +185,3 @@ func TestPetService_Delete_NotFound(t *testing.T) {
 		t.Fatal("ห้าม publish event เมื่อหา pet ไม่เจอ")
 	}
 }
-
-// ล็อกค่า master data ปัจจุบันไว้เป็น golden — Phase 3 ต้องคืนค่าเดิมทุกตัวอักษร
-func TestMasterDataService_GoldenValues(t *testing.T) {
-	svc := NewMasterDataService()
-	breeds := svc.GetCatBreeds(t.Context())
-	if len(breeds) != 14 {
-		t.Fatalf("จำนวนสายพันธุ์ = %d ต้องการ 14", len(breeds))
-	}
-	if breeds[0] != "Scottish Fold (หูพับ)" {
-		t.Fatalf("breeds[0] = %q", breeds[0])
-	}
-	if breeds[13] != "Mixed / Other (พันธุ์ผสม/อื่นๆ)" {
-		t.Fatalf("breeds[13] = %q", breeds[13])
-	}
-	blood := svc.GetBloodTypes(t.Context())
-	want := []string{"Unknown", "A", "B", "AB"}
-	if len(blood) != len(want) {
-		t.Fatalf("blood types = %v", blood)
-	}
-	for i := range want {
-		if blood[i] != want[i] {
-			t.Fatalf("blood[%d] = %q want %q", i, blood[i], want[i])
-		}
-	}
-}

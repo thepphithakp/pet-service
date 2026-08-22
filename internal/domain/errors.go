@@ -26,4 +26,13 @@ var (
 
 	// ErrValidation request ไม่ผ่านการตรวจโครงสร้าง
 	ErrValidation = errors.New("validation failed")
+
+	// ErrMasterDataNotFound ไม่พบรายการ master data ที่อ้างถึง
+	ErrMasterDataNotFound = errors.New("master data not found")
+
+	// ErrMasterDataDuplicate มี code นี้อยู่แล้ว
+	ErrMasterDataDuplicate = errors.New("master data code already exists")
+
+	// ErrVersionConflict มีคนอื่นแก้รายการนี้ไปแล้วระหว่างที่เรากำลังแก้
+	ErrVersionConflict = errors.New("version conflict")
 )

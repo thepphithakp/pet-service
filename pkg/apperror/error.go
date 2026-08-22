@@ -60,6 +60,13 @@ func FromDomain(err error) *AppError {
 		return Unauthorized("Authentication required")
 	case errors.Is(err, domain.ErrCaregiverDuplicate):
 		return BadRequest("Caregiver already exists for this pet", err)
+	case errors.Is(err, domain.ErrMasterDataNotFound):
+		return NotFound("Master data", err)
+	case errors.Is(err, domain.ErrMasterDataDuplicate):
+		return &AppError{Code: http.StatusConflict, Message: "รหัสนี้มีอยู่แล้ว", Cause: err}
+	case errors.Is(err, domain.ErrVersionConflict):
+		return &AppError{Code: http.StatusConflict,
+			Message: "มีคนอื่นแก้ไขรายการนี้ไปแล้ว กรุณาโหลดใหม่แล้วลองอีกครั้ง", Cause: err}
 	case errors.Is(err, domain.ErrValidation):
 		return BadRequest(err.Error(), err)
 	case errors.Is(err, domain.ErrInvalidPermission):

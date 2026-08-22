@@ -41,6 +41,7 @@ func wire(db *gorm.DB, cfg config.Config) handlers {
 	litterRepo := repository.NewGORMLitterRepository(db)
 	waterRepo := repository.NewGORMWaterRepository(db)
 	capabilityRepo := repository.NewGORMCapabilityRepository(db)
+	masterDataRepo := repository.NewGORMMasterDataRepository(db)
 	eventPublisher := event.NewHTTPEventPublisher(cfg.EventServiceURL)
 
 	// Authorizer ใช้ร่วมกันทุก service — บังคับสิทธิ์ที่ชั้น application
@@ -51,7 +52,7 @@ func wire(db *gorm.DB, cfg config.Config) handlers {
 	caregiverService := application.NewCaregiverService(caregiverRepo, permissionRepo, authz)
 	litterService := application.NewLitterService(litterRepo, eventPublisher, authz)
 	waterService := application.NewWaterService(waterRepo, eventPublisher, authz)
-	masterDataService := application.NewMasterDataService()
+	masterDataService := application.NewMasterDataService(masterDataRepo, permissionRepo, authz)
 
 	// Input adapters
 	return handlers{
@@ -59,7 +60,7 @@ func wire(db *gorm.DB, cfg config.Config) handlers {
 		caregiver:  handler.NewCaregiverHandler(caregiverService),
 		litter:     handler.NewLitterHandler(litterService),
 		water:      handler.NewWaterHandler(waterService),
-		masterData: handler.NewMasterDataHandler(masterDataService),
+		masterData: handler.NewMasterDataHandler(masterDataService, masterDataService),
 	}
 }
 

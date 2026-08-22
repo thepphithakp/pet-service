@@ -278,7 +278,8 @@ func TestCaregiverRoutes(t *testing.T) {
 // Phase 3.6 บอกว่า v1 ต้องคืนค่าเหมือนเดิมทุกตัวอักษรหลังย้าย master data เข้า DB
 func TestMasterDataResponseShape(t *testing.T) {
 	app := newTestApp(nil)
-	NewMasterDataHandler(masterDataStub{}).RegisterRoutes(app.Group("/api/v1"))
+	stub := masterDataStub{}
+	NewMasterDataHandler(stub, stub).RegisterRoutes(app.Group("/api/v1"))
 
 	for _, tc := range []struct{ path, want string }{
 		{"/api/v1/master-data/cat-breeds", `["Scottish Fold (หูพับ)","Persian"]`},

@@ -28,4 +28,5 @@ func registerRoutes(app *fiber.App, h handlers, auth middleware.AuthConfig) {
 	//    ห้ามพึ่ง group เป็นด่านเดียว
 	admin := app.Group("/api/v1/admin", authMW)
 	h.pet.RegisterAdminRoutes(admin)
+	h.masterData.RegisterAdminRoutes(admin)
 }

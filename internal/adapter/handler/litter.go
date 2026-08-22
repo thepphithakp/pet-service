@@ -112,25 +112,3 @@ func (h *LitterHandler) RegisterRoutes(r fiber.Router) {
 	r.Post("/pets/:id/litter-logs/batch", h.CreateBatch)
 	r.Delete("/pets/:id/litter-logs/:logId", h.Delete)
 }
-
-// MasterDataHandler handles master data endpoints.
-type MasterDataHandler struct {
-	useCase port.MasterDataUseCase
-}
-
-func NewMasterDataHandler(uc port.MasterDataUseCase) *MasterDataHandler {
-	return &MasterDataHandler{useCase: uc}
-}
-
-func (h *MasterDataHandler) GetCatBreeds(c *fiber.Ctx) error {
-	return c.JSON(h.useCase.GetCatBreeds(c.UserContext()))
-}
-
-func (h *MasterDataHandler) GetBloodTypes(c *fiber.Ctx) error {
-	return c.JSON(h.useCase.GetBloodTypes(c.UserContext()))
-}
-
-func (h *MasterDataHandler) RegisterRoutes(r fiber.Router) {
-	r.Get("/master-data/cat-breeds", h.GetCatBreeds)
-	r.Get("/master-data/blood-types", h.GetBloodTypes)
-}

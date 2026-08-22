@@ -1,16 +1,30 @@
 # Binaries
 /pet-service
+/main
+/bin/
 
-# IDE files
+# IDE
 .idea/
+.vscode/
+*.iml
 
-# OS files
+# OS
 .DS_Store
 
-# Patch and tar files
+# Patch / archive artifacts
 *.patch
 *.tar
+*.tar.gz
 
-# Env
+# Secrets & local config
 .env
-kubeconfig-vertex.yaml
+.env.*
+!.env.example
+kubeconfig*.yaml
+/keys/*.pem
+!/keys/public.pem
+
+# Test / build output
+coverage.out
+coverage.html
+/backup/

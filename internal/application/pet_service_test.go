@@ -178,7 +178,7 @@ func TestPetService_Delete_NotFound(t *testing.T) {
 	repo := &fakePetRepo{findErr: domain.ErrPetNotFound}
 	pub := &fakePublisher{}
 	err := newPetSvc(repo, pub, domain.AccessOwner).Delete(ctxAs(uuid.New()), uuid.New())
-	if err != domain.ErrPetNotFound {
+	if !errors.Is(err, domain.ErrPetNotFound) {
 		t.Fatalf("err = %v ต้องเป็น ErrPetNotFound", err)
 	}
 	if len(pub.events) != 0 {

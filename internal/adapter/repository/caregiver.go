@@ -6,9 +6,10 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
+	"gorm.io/gorm"
+
 	"github.com/vertex/pet-service/internal/adapter/repository/model"
 	"github.com/vertex/pet-service/internal/domain"
-	"gorm.io/gorm"
 )
 
 // GORMCaregiverRepository implements port.CaregiverRepository.

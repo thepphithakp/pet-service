@@ -6,9 +6,10 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
+
 	"github.com/vertex/pet-service/internal/adapter/repository/model"
 	"github.com/vertex/pet-service/internal/domain"
-	"gorm.io/gorm"
 )
 
 // GORMPetRepository implements port.PetRepository.

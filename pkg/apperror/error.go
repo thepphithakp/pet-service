@@ -4,8 +4,9 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/vertex/pet-service/internal/domain"
 	"gorm.io/gorm"
+
+	"github.com/vertex/pet-service/internal/domain"
 )
 
 // AppError is a structured error carrying an HTTP status and user-facing message.
@@ -81,10 +82,9 @@ func FromDomain(err error) *AppError {
 }
 
 // IsAppError checks if err is an *AppError.
+//
+// C-8: เดิมใช้ type assertion ตรงๆ ทำให้ AppError ที่ถูก wrap ด้วย
+// fmt.Errorf("%w") ไม่ถูกจับ แล้วตกไปเป็น 500 แทนที่จะเป็น status ที่ถูกต้อง
 func IsAppError(err error, target **AppError) bool {
-	if e, ok := err.(*AppError); ok {
-		*target = e
-		return true
-	}
-	return false
+	return errors.As(err, target)
 }

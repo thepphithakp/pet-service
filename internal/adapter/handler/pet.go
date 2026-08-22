@@ -3,6 +3,7 @@ package handler
 import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
+
 	"github.com/vertex/pet-service/internal/adapter/handler/dto"
 	"github.com/vertex/pet-service/internal/domain"
 	"github.com/vertex/pet-service/internal/port"

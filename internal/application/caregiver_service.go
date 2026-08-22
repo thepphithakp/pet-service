@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
+
 	"github.com/vertex/pet-service/internal/domain"
 	"github.com/vertex/pet-service/internal/port"
 )

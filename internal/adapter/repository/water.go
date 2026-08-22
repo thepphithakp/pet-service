@@ -4,9 +4,10 @@ import (
 	"context"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
+
 	"github.com/vertex/pet-service/internal/adapter/repository/model"
 	"github.com/vertex/pet-service/internal/domain"
-	"gorm.io/gorm"
 )
 
 // GORMWaterRepository implements port.WaterRepository.

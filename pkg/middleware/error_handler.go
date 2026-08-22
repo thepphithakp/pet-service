@@ -1,9 +1,11 @@
 package middleware
 
 import (
+	"errors"
 	"log"
 
 	"github.com/gofiber/fiber/v2"
+
 	"github.com/vertex/pet-service/pkg/apperror"
 )
 
@@ -26,7 +28,8 @@ func ErrorHandler(c *fiber.Ctx, err error) error {
 	}
 
 	// 2. Fiber built-in errors (route not found, body limit exceeded, etc.)
-	if fiberErr, ok := err.(*fiber.Error); ok {
+	var fiberErr *fiber.Error
+	if errors.As(err, &fiberErr) {
 		return c.Status(fiberErr.Code).JSON(fiber.Map{
 			"error":     fiberErr.Message,
 			"requestId": reqID,

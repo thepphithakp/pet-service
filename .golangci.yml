@@ -37,7 +37,8 @@ linters:
   exclusions:
     rules:
       - path: _test\.go
-        linters: [gosec, errcheck, noctx]
+        # test ปิด response body ไม่ครบเป็นเรื่องปกติ — app.Test() ไม่ได้เปิด connection จริง
+        linters: [gosec, errcheck, noctx, bodyclose]
 
 formatters:
   enable:

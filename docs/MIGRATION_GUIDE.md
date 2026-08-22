@@ -9,19 +9,32 @@
 
 `AutoMigrate` ถูกถอดออกแล้ว schema ทั้งหมดจัดการด้วย **Flyway**
 
+> 📦 **ไฟล์ SQL ทั้งหมดย้ายไปอยู่ repo `vertex-migrations` แล้ว**
+> เพราะทุก service ใช้ database เดียวกัน การมี migration กระจายหลาย repo
+> ทำให้ไม่มีที่ไหนเห็นภาพรวมของ schema ทั้งระบบ
+>
+> ⚠️ **ผลที่ตามมา: ต้อง deploy migration ก่อน app เสมอ**
+> เดิม migration image ใช้ tag เดียวกับ app image จึงตรงกันอัตโนมัติ
+> ตอนนี้ต้องอัปเดต `migration.image.tag` ใน helm values เอง
+> ถ้าลืม `AssertSchemaVersion` จะทำให้ app ล้มตั้งแต่ boot พร้อมข้อความชัดเจน
+>
+> อ่านกฎเต็มที่ `vertex-migrations/README.md`
+
+โครงสร้างใน repo นั้น:
 ```
-db/
-├── bootstrap/   รันด้วยมือครั้งเดียวตอนตั้งระบบ — ไม่อยู่ใน FLYWAY_LOCATIONS
+pet/
 ├── migration/   V__  DDL + seed ครั้งแรก · รันครั้งเดียว · IMMUTABLE
 ├── codeowned/   R__  เฉพาะตารางที่ backoffice แก้ไม่ได้ · รันซ้ำเมื่อ checksum เปลี่ยน
 ├── seed/        R__  ข้อมูลตัวอย่าง local เท่านั้น · ไม่เข้า production image
-├── verify/      SQL สำหรับพิสูจน์ว่าข้อมูลครบ
-└── rollback/    เอกสารว่าถ้าต้องถอยจะรันอะไร · ไม่ถูกรันอัตโนมัติ
+└── bootstrap/   รันด้วยมือครั้งเดียวตอนตั้งระบบ — ไม่อยู่ใน FLYWAY_LOCATIONS
+auth/            โครงเดียวกัน
+verify/          SQL สำหรับพิสูจน์ว่าข้อมูลครบ
+rollback/        เอกสารว่าถ้าต้องถอยจะรันอะไร · ไม่ถูกรันอัตโนมัติ
 ```
 
 | ทำอะไร | ใช้คำสั่ง |
 |---|---|
-| ยก DB + รัน migration บนเครื่อง | `make db-up` |
+| ยก DB + รัน migration บนเครื่อง | `make db-up` (ที่ `vertex-migrations`) |
 | ล้างแล้วสร้างใหม่ | `make db-reset` |
 | ดูสถานะ migration | `make migrate-info` |
 | ตรวจ checksum | `make migrate-validate` |

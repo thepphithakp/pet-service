@@ -43,7 +43,8 @@ cover: ## test + coverage report
 	go tool cover -html=coverage.out -o coverage.html
 	@go tool cover -func=coverage.out | tail -1
 
-db-up: ## ยก postgres + รัน flyway migration
+db-up: ## ยก postgres + รัน flyway migration (ต้อง clone vertex-migrations ไว้ข้างกัน)
+	@test -d ../vertex-migrations || { echo "ไม่พบ ../vertex-migrations — clone repo migration ไว้ข้างกันก่อน"; exit 1; }
 	$(COMPOSE) up -d postgres
 	$(COMPOSE) run --rm flyway
 

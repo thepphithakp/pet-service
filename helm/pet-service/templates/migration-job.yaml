@@ -67,8 +67,10 @@ spec:
             - name: FLYWAY_TABLE
               value: "flyway_schema_history"
             # 🚫 ห้ามใส่ db/seed — เป็นข้อมูลตัวอย่างสำหรับ local เท่านั้น
+            # SQL อยู่ใน repo vertex-migrations แยกต่างหาก
+            # image เดียวบรรจุของทุก service แล้วเลือกด้วย path นี้
             - name: FLYWAY_LOCATIONS
-              value: "filesystem:/flyway/sql/migration,filesystem:/flyway/sql/codeowned"
+              value: "filesystem:/flyway/sql/pet/migration,filesystem:/flyway/sql/pet/codeowned"
             # database ที่มีข้อมูลแล้วและไม่มี history: baseline ที่ V1 แล้วข้าม V1 ไปรัน V2+
             # ⚠️ เปลี่ยนเป็น "false" หลัง prod baseline สำเร็จแล้ว
             - name: FLYWAY_BASELINE_ON_MIGRATE

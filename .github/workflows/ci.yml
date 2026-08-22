@@ -63,6 +63,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # SQL อยู่คนละ repo — ดึงมาเพื่อเตรียมฐานข้อมูลให้ integration test
+      - name: Checkout migrations
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/vertex-migrations
+          path: .migrations
+          token: ${{ secrets.MIGRATIONS_REPO_TOKEN || github.token }}
+
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
@@ -72,8 +80,8 @@ jobs:
       - name: Flyway migrate
         run: |
           docker run --rm --network host \
-            -v "$PWD/db/migration:/flyway/sql/migration:ro" \
-            -v "$PWD/db/codeowned:/flyway/sql/codeowned:ro" \
+            -v "$PWD/.migrations/pet/migration:/flyway/sql/migration:ro" \
+            -v "$PWD/.migrations/pet/codeowned:/flyway/sql/codeowned:ro" \
             -e FLYWAY_URL=jdbc:postgresql://localhost:5432/vertex_pet \
             -e FLYWAY_USER=vertex -e FLYWAY_PASSWORD=vertex \
             -e FLYWAY_SCHEMAS=pet -e FLYWAY_DEFAULT_SCHEMA=pet \
@@ -86,8 +94,8 @@ jobs:
       - name: Flyway migrate ซ้ำ (ต้อง idempotent)
         run: |
           docker run --rm --network host \
-            -v "$PWD/db/migration:/flyway/sql/migration:ro" \
-            -v "$PWD/db/codeowned:/flyway/sql/codeowned:ro" \
+            -v "$PWD/.migrations/pet/migration:/flyway/sql/migration:ro" \
+            -v "$PWD/.migrations/pet/codeowned:/flyway/sql/codeowned:ro" \
             -e FLYWAY_URL=jdbc:postgresql://localhost:5432/vertex_pet \
             -e FLYWAY_USER=vertex -e FLYWAY_PASSWORD=vertex \
             -e FLYWAY_SCHEMAS=pet -e FLYWAY_DEFAULT_SCHEMA=pet \
@@ -98,16 +106,16 @@ jobs:
       - name: Flyway validate + info
         run: |
           docker run --rm --network host \
-            -v "$PWD/db/migration:/flyway/sql/migration:ro" \
-            -v "$PWD/db/codeowned:/flyway/sql/codeowned:ro" \
+            -v "$PWD/.migrations/pet/migration:/flyway/sql/migration:ro" \
+            -v "$PWD/.migrations/pet/codeowned:/flyway/sql/codeowned:ro" \
             -e FLYWAY_URL=jdbc:postgresql://localhost:5432/vertex_pet \
             -e FLYWAY_USER=vertex -e FLYWAY_PASSWORD=vertex \
             -e FLYWAY_SCHEMAS=pet -e FLYWAY_DEFAULT_SCHEMA=pet \
             -e FLYWAY_LOCATIONS=filesystem:/flyway/sql/migration,filesystem:/flyway/sql/codeowned \
             flyway/flyway:11-alpine validate
           docker run --rm --network host \
-            -v "$PWD/db/migration:/flyway/sql/migration:ro" \
-            -v "$PWD/db/codeowned:/flyway/sql/codeowned:ro" \
+            -v "$PWD/.migrations/pet/migration:/flyway/sql/migration:ro" \
+            -v "$PWD/.migrations/pet/codeowned:/flyway/sql/codeowned:ro" \
             -e FLYWAY_URL=jdbc:postgresql://localhost:5432/vertex_pet \
             -e FLYWAY_USER=vertex -e FLYWAY_PASSWORD=vertex \
             -e FLYWAY_SCHEMAS=pet -e FLYWAY_DEFAULT_SCHEMA=pet \

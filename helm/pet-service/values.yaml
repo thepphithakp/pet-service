@@ -83,9 +83,17 @@ db:
 migration:
   enabled: true
   image:
-    repository: ghcr.io/thepphithakp/pet-service-migrations
-    # ว่างไว้ = ใช้ tag เดียวกับ app image เพื่อให้ schema กับโค้ดตรงกันเสมอ
-    tag: ""
+    # SQL อยู่ใน repo vertex-migrations แยกต่างหาก
+    repository: ghcr.io/thepphithakp/vertex-migrations
+    # ⚠️ ต้องระบุ tag ชัดเจนเสมอ ห้ามเว้นว่าง
+    #
+    # เดิม migration image ใช้ tag เดียวกับ app image จึงตรงกันอัตโนมัติ
+    # พอแยก repo แล้ว schema version กับ code version หลุดจากกัน
+    # ต้องอัปเดตค่านี้ทุกครั้งที่เพิ่ม V__ ที่โค้ดพึ่งพา
+    #
+    # ถ้าลืม: AssertSchemaVersion จะทำให้ app ล้มตั้งแต่ boot
+    # พร้อมข้อความว่าต้องรัน migration ก่อน — ปลอดภัยกว่าไปพังตอน query แรก
+    tag: "latest"
   # Secret ที่เก็บ credential ของ migrator (มีสิทธิ์ DDL)
   credentialsSecret: pet-db-migrator
   # ⚠️ เปลี่ยนเป็น false หลัง prod baseline สำเร็จแล้ว

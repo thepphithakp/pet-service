@@ -15,19 +15,23 @@ type AppError struct {
 	Cause   error // internal cause — logged but never sent to client
 }
 
-func (e *AppError) Error() string  { return e.Message }
-func (e *AppError) Unwrap() error  { return e.Cause }
+func (e *AppError) Error() string { return e.Message }
+func (e *AppError) Unwrap() error { return e.Cause }
 
 // Constructors
 func BadRequest(msg string, cause ...error) *AppError {
 	e := &AppError{Code: http.StatusBadRequest, Message: msg}
-	if len(cause) > 0 { e.Cause = cause[0] }
+	if len(cause) > 0 {
+		e.Cause = cause[0]
+	}
 	return e
 }
 
 func NotFound(resource string, cause ...error) *AppError {
 	e := &AppError{Code: http.StatusNotFound, Message: resource + " not found"}
-	if len(cause) > 0 { e.Cause = cause[0] }
+	if len(cause) > 0 {
+		e.Cause = cause[0]
+	}
 	return e
 }
 

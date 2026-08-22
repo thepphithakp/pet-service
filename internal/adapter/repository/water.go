@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/google/uuid"
+	"github.com/vertex/pet-service/internal/adapter/repository/model"
 	"github.com/vertex/pet-service/internal/domain"
 	"gorm.io/gorm"
 )
@@ -18,7 +19,7 @@ func NewGORMWaterRepository(db *gorm.DB) *GORMWaterRepository {
 }
 
 func (r *GORMWaterRepository) Save(ctx context.Context, log *domain.WaterLog) (*domain.WaterLog, error) {
-	m := WaterModelFromDomain(*log)
+	m := model.WaterFromDomain(*log)
 	if err := r.db.WithContext(ctx).Create(&m).Error; err != nil {
 		return nil, err
 	}
@@ -27,7 +28,7 @@ func (r *GORMWaterRepository) Save(ctx context.Context, log *domain.WaterLog) (*
 }
 
 func (r *GORMWaterRepository) FindByPetID(ctx context.Context, petID uuid.UUID) ([]domain.WaterLog, error) {
-	var models []WaterModel
+	var models []model.Water
 	if err := r.db.WithContext(ctx).Where("pet_id = ?", petID).Order("date desc").Find(&models).Error; err != nil {
 		return nil, err
 	}
@@ -39,7 +40,7 @@ func (r *GORMWaterRepository) FindByPetID(ctx context.Context, petID uuid.UUID) 
 }
 
 func (r *GORMWaterRepository) Delete(ctx context.Context, logID uuid.UUID) error {
-	result := r.db.WithContext(ctx).Delete(&WaterModel{}, "id = ?", logID)
+	result := r.db.WithContext(ctx).Delete(&model.Water{}, "id = ?", logID)
 	if result.Error != nil {
 		return result.Error
 	}

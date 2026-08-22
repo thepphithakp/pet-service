@@ -10,13 +10,13 @@ import (
 
 // LitterService implements port.LitterUseCase.
 type LitterService struct {
-	repo port.LitterRepository
+	repo           port.LitterRepository
 	eventPublisher port.EventPublisher
 }
 
 func NewLitterService(repo port.LitterRepository, eventPublisher port.EventPublisher) *LitterService {
 	return &LitterService{
-		repo: repo,
+		repo:           repo,
 		eventPublisher: eventPublisher,
 	}
 }
@@ -27,7 +27,7 @@ func (s *LitterService) GetForPet(ctx context.Context, petID uuid.UUID) ([]domai
 
 func (s *LitterService) Create(ctx context.Context, log *domain.LitterLog) (*domain.LitterLog, error) {
 	log.ID = uuid.New()
-	
+
 	created, err := s.repo.Save(ctx, log)
 	if err == nil && s.eventPublisher != nil {
 		actorID := ""
@@ -44,7 +44,7 @@ func (s *LitterService) Create(ctx context.Context, log *domain.LitterLog) (*dom
 			ActorID:       actorID,
 			ActorUsername: actorUsername,
 			EntityID:      log.PetID.String(),
-			EntityType: "Pet",
+			EntityType:    "Pet",
 			Payload: map[string]interface{}{
 				"type":   log.Type,
 				"amount": log.Amount,
@@ -77,7 +77,7 @@ func (s *LitterService) CreateBatch(ctx context.Context, logs []domain.LitterLog
 				ActorID:       actorID,
 				ActorUsername: actorUsername,
 				EntityID:      log.PetID.String(),
-				EntityType: "Pet",
+				EntityType:    "Pet",
 				Payload: map[string]interface{}{
 					"type":   log.Type,
 					"amount": log.Amount,

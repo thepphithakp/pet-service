@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"github.com/google/uuid"
+	"github.com/vertex/pet-service/internal/adapter/repository/model"
 	"github.com/vertex/pet-service/internal/domain"
 	"gorm.io/gorm"
 )
@@ -19,7 +20,7 @@ func NewGORMCaregiverRepository(db *gorm.DB) *GORMCaregiverRepository {
 }
 
 func (r *GORMCaregiverRepository) FindByPetID(ctx context.Context, petID uuid.UUID) ([]domain.PetCaregiver, error) {
-	var models []CaregiverModel
+	var models []model.Caregiver
 	if err := r.db.WithContext(ctx).Preload("Permissions").Where("pet_id = ?", petID).Find(&models).Error; err != nil {
 		return nil, err
 	}
@@ -31,7 +32,7 @@ func (r *GORMCaregiverRepository) FindByPetID(ctx context.Context, petID uuid.UU
 }
 
 func (r *GORMCaregiverRepository) FindByID(ctx context.Context, id uuid.UUID) (*domain.PetCaregiver, error) {
-	var m CaregiverModel
+	var m model.Caregiver
 	err := r.db.WithContext(ctx).Preload("Permissions").First(&m, "id = ?", id).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -44,7 +45,7 @@ func (r *GORMCaregiverRepository) FindByID(ctx context.Context, id uuid.UUID) (*
 }
 
 func (r *GORMCaregiverRepository) FindDeletedByPetAndUser(ctx context.Context, petID, userID uuid.UUID) (*domain.PetCaregiver, error) {
-	var m CaregiverModel
+	var m model.Caregiver
 	err := r.db.WithContext(ctx).Unscoped().
 		Where("pet_id = ? AND user_id = ? AND deleted_at IS NOT NULL", petID, userID).
 		First(&m).Error
@@ -56,9 +57,9 @@ func (r *GORMCaregiverRepository) FindDeletedByPetAndUser(ctx context.Context, p
 }
 
 func (r *GORMCaregiverRepository) Save(ctx context.Context, caregiver *domain.PetCaregiver) (*domain.PetCaregiver, error) {
-	m := CaregiverModel{
-		ID:    caregiver.ID,
-		PetID: caregiver.PetID,
+	m := model.Caregiver{
+		ID:     caregiver.ID,
+		PetID:  caregiver.PetID,
 		UserID: caregiver.UserID,
 	}
 	if err := r.db.WithContext(ctx).Create(&m).Error; err != nil {
@@ -69,7 +70,7 @@ func (r *GORMCaregiverRepository) Save(ctx context.Context, caregiver *domain.Pe
 }
 
 func (r *GORMCaregiverRepository) Restore(ctx context.Context, id uuid.UUID) (*domain.PetCaregiver, error) {
-	if err := r.db.WithContext(ctx).Unscoped().Model(&CaregiverModel{}).
+	if err := r.db.WithContext(ctx).Unscoped().Model(&model.Caregiver{}).
 		Where("id = ?", id).Update("deleted_at", nil).Error; err != nil {
 		return nil, err
 	}
@@ -77,13 +78,13 @@ func (r *GORMCaregiverRepository) Restore(ctx context.Context, id uuid.UUID) (*d
 }
 
 func (r *GORMCaregiverRepository) UpdatePermissions(ctx context.Context, caregiverID uuid.UUID, permissions []domain.PetPermission) (*domain.PetCaregiver, error) {
-	var m CaregiverModel
+	var m model.Caregiver
 	if err := r.db.WithContext(ctx).First(&m, "id = ?", caregiverID).Error; err != nil {
 		return nil, err
 	}
-	permModels := make([]PermissionModel, len(permissions))
+	permModels := make([]model.Permission, len(permissions))
 	for i, p := range permissions {
-		permModels[i] = PermissionModelFromDomain(p)
+		permModels[i] = model.PermissionFromDomain(p)
 	}
 	if err := r.db.WithContext(ctx).Model(&m).Association("Permissions").Replace(permModels); err != nil {
 		return nil, err
@@ -92,7 +93,7 @@ func (r *GORMCaregiverRepository) UpdatePermissions(ctx context.Context, caregiv
 }
 
 func (r *GORMCaregiverRepository) Delete(ctx context.Context, id uuid.UUID) error {
-	return r.db.WithContext(ctx).Delete(&CaregiverModel{}, "id = ?", id).Error
+	return r.db.WithContext(ctx).Delete(&model.Caregiver{}, "id = ?", id).Error
 }
 
 // GORMPermissionRepository implements port.PermissionRepository.
@@ -105,7 +106,7 @@ func NewGORMPermissionRepository(db *gorm.DB) *GORMPermissionRepository {
 }
 
 func (r *GORMPermissionRepository) FindAll(ctx context.Context) ([]domain.PetPermission, error) {
-	var models []PermissionModel
+	var models []model.Permission
 	if err := r.db.WithContext(ctx).Find(&models).Error; err != nil {
 		return nil, err
 	}
@@ -118,8 +119,8 @@ func (r *GORMPermissionRepository) FindAll(ctx context.Context) ([]domain.PetPer
 
 func (r *GORMPermissionRepository) Seed(ctx context.Context, permissions []domain.PetPermission) error {
 	for _, p := range permissions {
-		m := PermissionModelFromDomain(p)
-		r.db.WithContext(ctx).FirstOrCreate(&m, PermissionModel{ID: p.ID})
+		m := model.PermissionFromDomain(p)
+		r.db.WithContext(ctx).FirstOrCreate(&m, model.Permission{ID: p.ID})
 	}
 	return nil
 }

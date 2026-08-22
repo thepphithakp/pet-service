@@ -39,7 +39,7 @@ func (h *WaterHandler) Create(c *fiber.Ctx) error {
 		return apperror.BadRequest("Invalid request body", err)
 	}
 	log.PetID = petID
-	
+
 	userId, _ := c.Locals("userId").(string)
 	userName, _ := c.Locals("userName").(string)
 	if userId != "" {

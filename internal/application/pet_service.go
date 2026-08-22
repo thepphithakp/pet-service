@@ -10,20 +10,20 @@ import (
 
 // PetService implements port.PetUseCase.
 type PetService struct {
-	repo port.PetRepository
+	repo           port.PetRepository
 	eventPublisher port.EventPublisher
 }
 
 // NewPetService creates a new PetService.
 func NewPetService(repo port.PetRepository, eventPublisher port.EventPublisher) *PetService {
 	return &PetService{
-		repo: repo,
+		repo:           repo,
 		eventPublisher: eventPublisher,
 	}
 }
 
 func (s *PetService) GetAllForUser(ctx context.Context, userID uuid.UUID) ([]domain.Pet, error) {
-    return s.repo.FindAllForUser(ctx, userID)
+	return s.repo.FindAllForUser(ctx, userID)
 }
 
 func (s *PetService) GetAll(ctx context.Context) ([]domain.Pet, error) {
@@ -37,7 +37,7 @@ func (s *PetService) GetByID(ctx context.Context, id uuid.UUID) (*domain.Pet, er
 func (s *PetService) Create(ctx context.Context, pet *domain.Pet, ownerID uuid.UUID) (*domain.Pet, error) {
 	pet.ID = uuid.New()
 	pet.OwnerID = ownerID
-	
+
 	created, err := s.repo.Save(ctx, pet)
 	if err == nil && s.eventPublisher != nil {
 		s.eventPublisher.Publish(ctx, port.EventLog{

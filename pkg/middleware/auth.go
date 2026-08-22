@@ -3,11 +3,11 @@ package middleware
 import (
 	"crypto/rsa"
 	"fmt"
-    "log"
+	"log"
 	"strings"
 
-	"github.com/golang-jwt/jwt/v5"
 	"github.com/gofiber/fiber/v2"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/vertex/pet-service/pkg/apperror"
 )
 
@@ -39,10 +39,10 @@ func NewAuthMiddleware(publicKey *rsa.PublicKey) fiber.Handler {
 		if !ok {
 			return apperror.Unauthorized("Invalid token subject")
 		}
-		
+
 		nameStr, _ := claims["name"].(string)
 
-        log.Printf("[DEBUG] Auth middleware extracted sub: %s", userIDStr)
+		log.Printf("[DEBUG] Auth middleware extracted sub: %s", userIDStr)
 		c.Locals("userId", userIDStr)
 		c.Locals("userName", nameStr)
 		return c.Next()

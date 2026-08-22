@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
-	"os"
 
 	"github.com/vertex/pet-service/internal/port"
 )
@@ -15,13 +14,11 @@ type HTTPEventPublisher struct {
 	EventServiceURL string
 }
 
-func NewHTTPEventPublisher() *HTTPEventPublisher {
-	url := os.Getenv("EVENT_SERVICE_URL")
-	if url == "" {
-		url = "http://event-service.vertex.svc.cluster.local:4002"
-	}
+// NewHTTPEventPublisher รับ URL จากภายนอกแทนการอ่าน env เอง (แก้ A-5)
+// การตั้งค่าทั้งหมดรวมอยู่ที่ internal/config แล้ว
+func NewHTTPEventPublisher(eventServiceURL string) *HTTPEventPublisher {
 	return &HTTPEventPublisher{
-		EventServiceURL: url,
+		EventServiceURL: eventServiceURL,
 	}
 }
 

@@ -6,7 +6,6 @@ image:
   tag: "latest"
 
 imagePullSecrets: []
-
 nameOverride: ""
 fullnameOverride: ""
 
@@ -17,26 +16,32 @@ serviceAccount:
 
 podAnnotations: {}
 
-podSecurityContext: {}
-  # fsGroup: 2000
+# --- Security context ----------------------------------------------------
+# เดิมทั้งสองอันเป็น {} ทำให้ container รันเป็น root (S-7)
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  fsGroup: 65532
+  seccompProfile:
+    type: RuntimeDefault
 
-securityContext: {}
-  # capabilities:
-  #   drop:
-  #   - ALL
-  # readOnlyRootFilesystem: true
-  # runAsNonRoot: true
-  # runAsUser: 1000
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  capabilities:
+    drop:
+      - ALL
 
 service:
   type: ClusterIP
-  port: 8080
+  port: 4001
 
 ingress:
   enabled: false
   className: ""
   annotations: {}
-    # kubernetes.io/ingress.class: nginx
   hosts:
     - host: chart-example.local
       paths:
@@ -46,35 +51,89 @@ ingress:
 
 resources:
   limits:
-    cpu: 100m
-    memory: 128Mi
+    cpu: 500m
+    # 128Mi ต่ำเกินไปตราบใดที่ list API ยังส่ง avatar blob กลับ (P-1)
+    # ลดลงได้หลัง Phase 5.1
+    memory: 512Mi
   requests:
-    cpu: 10m
-    memory: 64Mi
+    cpu: 50m
+    memory: 128Mi
 
 nodeSelector: {}
 tolerations: []
 affinity: {}
 
+terminationGracePeriodSeconds: 30
+
+# --- Database -------------------------------------------------------------
+db:
+  host: postgres
+  port: 5432
+  name: vertex_pet
+  sslMode: disable
+  schema: pet
+  # ⚠️ ระหว่างย้าย schema ต้องเป็น "pet,public" และ deploy ค่านี้ให้ขึ้นก่อน
+  #    แล้วค่อยรัน db/bootstrap/001_move_to_pet_schema.sql
+  #    เปลี่ยนเป็น "pet" อย่างเดียวได้เมื่อ auth/event ย้ายเสร็จแล้ว
+  searchPath: "pet,public"
+  # Secret ที่เก็บ credential ของ runtime (สิทธิ์ DML เท่านั้น ไม่มี DDL)
+  credentialsSecret: pet-db-app
+
+# --- Flyway migration job ---
+#
+# ⚠️ default = false โดยตั้งใจ
+#
+# migration ย้ายไปอยู่ repo vertex-migrations พร้อม helm chart ของตัวเองแล้ว
+# ที่นั่นรัน Flyway เป็น Job และเป็นเจ้าของ schema จริง
+#
+#   helm upgrade --install vertex-migrations \
+#     ../vertex-migrations/helm/vertex-migrations -n vertex
+#
+# ถ้าเปิดตรงนี้ด้วยจะรัน migration ซ้ำสองที่ ซึ่งไม่พัง (Flyway idempotent)
+# แต่ทำให้ไม่ชัดว่าใครเป็นเจ้าของ schema และ debug ยากเมื่อมีปัญหา
+#
+# เปิดได้ถ้าอยากให้ migration ผูกกับ deploy ของ service แบบ pre-upgrade hook
+migration:
+  enabled: false
+  image:
+    # SQL อยู่ใน repo vertex-migrations แยกต่างหาก
+    repository: ghcr.io/thepphithakp/vertex-migrations
+    # ⚠️ ต้องระบุ tag ชัดเจนเสมอ ห้ามเว้นว่าง
+    #
+    # เดิม migration image ใช้ tag เดียวกับ app image จึงตรงกันอัตโนมัติ
+    # พอแยก repo แล้ว schema version กับ code version หลุดจากกัน
+    # ต้องอัปเดตค่านี้ทุกครั้งที่เพิ่ม V__ ที่โค้ดพึ่งพา
+    #
+    # ถ้าลืม: AssertSchemaVersion จะทำให้ app ล้มตั้งแต่ boot
+    # พร้อมข้อความว่าต้องรัน migration ก่อน — ปลอดภัยกว่าไปพังตอน query แรก
+    tag: "latest"
+  # Secret ที่เก็บ credential ของ migrator (มีสิทธิ์ DDL)
+  credentialsSecret: pet-db-migrator
+  # ⚠️ เปลี่ยนเป็น false หลัง prod baseline สำเร็จแล้ว
+  #    เพื่อไม่ให้เผลอ baseline database ผิดตัวในอนาคต
+  baselineOnMigrate: true
+  backoffLimit: 1
+  activeDeadlineSeconds: 600
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+# --- JWT ------------------------------------------------------------------
+jwt:
+  # Secret ที่เก็บ public key ทุกใบที่ยอมรับ (คีย์ "keys" เป็น PEM ต่อกันได้หลายใบ)
+  # เว้นว่าง = อ่านจากไฟล์ใน image เหมือนเดิม
+  # ระหว่าง rotate ให้ใส่ทั้งใบเก่าและใบใหม่ — ดู docs/KEY_ROTATION.md
+  publicKeysSecret: "jwt-public-keys"
+  issuer: ""
+  audience: ""
+
+# --- Application env ------------------------------------------------------
 env:
-  - name: DB_HOST
-    value: "postgres"
-  - name: DB_PORT
-    value: "5432"
-  - name: DB_USER
-    valueFrom:
-      secretKeyRef:
-        name: postgres-secret
-        key: POSTGRES_USER
-  - name: DB_PASSWORD
-    valueFrom:
-      secretKeyRef:
-        name: postgres-secret
-        key: POSTGRES_PASSWORD
-  - name: DB_NAME
-    valueFrom:
-      secretKeyRef:
-        name: postgres-secret
-        key: POSTGRES_DB
   - name: EVENT_SERVICE_URL
     value: "http://event-service:4002"
+  - name: LOG_LEVEL
+    value: "info"

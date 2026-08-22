@@ -1,0 +1,91 @@
+{{- if .Values.migration.enabled }}
+# =============================================================================
+# Flyway migration Job — รันก่อน pod ใหม่ขึ้นเสมอ
+# =============================================================================
+# hook-weight -5 ทำให้รันก่อน resource อื่นใน release
+# hook-delete-policy before-hook-creation ลบ Job รอบก่อนทิ้งเมื่อเริ่มรอบใหม่
+#   (ไม่ใช้ hook-succeeded เพื่อให้ log ของรอบที่ fail ยังดูได้)
+#
+# ถ้า Job นี้ fail helm จะหยุด upgrade ทั้ง release → pod เก่ายังรับ traffic ต่อไป
+# ปลอดภัยกว่าปล่อยให้ pod ใหม่ขึ้นแล้วไปพังตอน query แรก
+# =============================================================================
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "pet-service.fullname" . }}-migrate-{{ .Release.Revision }}
+  labels:
+    {{- include "pet-service.labels" . | nindent 4 }}
+    app.kubernetes.io/component: migration
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": before-hook-creation
+spec:
+  backoffLimit: {{ .Values.migration.backoffLimit }}
+  activeDeadlineSeconds: {{ .Values.migration.activeDeadlineSeconds }}
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        {{- include "pet-service.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: migration
+    spec:
+      restartPolicy: Never
+      serviceAccountName: {{ include "pet-service.serviceAccountName" . }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: flyway
+          image: "{{ .Values.migration.image.repository }}:{{ .Values.migration.image.tag | default .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["migrate"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false  # flyway เขียน temp ระหว่างรัน
+            capabilities:
+              drop: ["ALL"]
+          env:
+            - name: FLYWAY_URL
+              value: "jdbc:postgresql://{{ .Values.db.host }}:{{ .Values.db.port }}/{{ .Values.db.name }}?sslmode={{ .Values.db.sslMode }}"
+            - name: FLYWAY_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.migration.credentialsSecret }}
+                  key: username
+            - name: FLYWAY_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.migration.credentialsSecret }}
+                  key: password
+            - name: FLYWAY_SCHEMAS
+              value: {{ .Values.db.schema | quote }}
+            - name: FLYWAY_DEFAULT_SCHEMA
+              value: {{ .Values.db.schema | quote }}
+            - name: FLYWAY_TABLE
+              value: "flyway_schema_history"
+            # 🚫 ห้ามใส่ db/seed — เป็นข้อมูลตัวอย่างสำหรับ local เท่านั้น
+            # SQL อยู่ใน repo vertex-migrations แยกต่างหาก
+            # image เดียวบรรจุของทุก service แล้วเลือกด้วย path นี้
+            - name: FLYWAY_LOCATIONS
+              value: "filesystem:/flyway/sql/pet/migration,filesystem:/flyway/sql/pet/codeowned"
+            # database ที่มีข้อมูลแล้วและไม่มี history: baseline ที่ V1 แล้วข้าม V1 ไปรัน V2+
+            # ⚠️ เปลี่ยนเป็น "false" หลัง prod baseline สำเร็จแล้ว
+            - name: FLYWAY_BASELINE_ON_MIGRATE
+              value: {{ .Values.migration.baselineOnMigrate | quote }}
+            - name: FLYWAY_BASELINE_VERSION
+              value: "1"
+            - name: FLYWAY_VALIDATE_ON_MIGRATE
+              value: "true"
+            - name: FLYWAY_OUT_OF_ORDER
+              value: "false"
+            # 🚫 ห้ามเปลี่ยนเป็น false ในทุก environment
+            - name: FLYWAY_CLEAN_DISABLED
+              value: "true"
+            - name: FLYWAY_CONNECT_RETRIES
+              value: "20"
+          resources:
+            {{- toYaml .Values.migration.resources | nindent 12 }}
+{{- end }}

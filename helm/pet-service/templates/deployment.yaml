@@ -25,6 +25,7 @@ spec:
       serviceAccountName: {{ include "pet-service.serviceAccountName" . }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
       containers:
         - name: {{ .Chart.Name }}
           securityContext:
@@ -33,11 +34,47 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           ports:
             - name: http
-              containerPort: 8080
+              containerPort: {{ .Values.service.port }}
               protocol: TCP
           env:
+            # พอร์ตเดียวกันหมดทั้ง compose / helm / default ในโค้ด (แก้ C-14)
             - name: PORT
-              value: "8080"
+              value: {{ .Values.service.port | quote }}
+            - name: DB_HOST
+              value: {{ .Values.db.host | quote }}
+            - name: DB_PORT
+              value: {{ .Values.db.port | quote }}
+            - name: DB_NAME
+              value: {{ .Values.db.name | quote }}
+            - name: DB_SSLMODE
+              value: {{ .Values.db.sslMode | quote }}
+            - name: DB_SEARCH_PATH
+              value: {{ .Values.db.searchPath | quote }}
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.db.credentialsSecret }}
+                  key: username
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.db.credentialsSecret }}
+                  key: password
+            {{- if .Values.jwt.publicKeysSecret }}
+            - name: JWT_PUBLIC_KEYS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.jwt.publicKeysSecret }}
+                  key: keys
+            {{- end }}
+            {{- if .Values.jwt.issuer }}
+            - name: JWT_ISSUER
+              value: {{ .Values.jwt.issuer | quote }}
+            {{- end }}
+            {{- if .Values.jwt.audience }}
+            - name: JWT_AUDIENCE
+              value: {{ .Values.jwt.audience | quote }}
+            {{- end }}
             {{- with .Values.env }}
             {{- toYaml . | nindent 12 }}
             {{- end }}

@@ -10,42 +10,55 @@ import (
 
 // PetService implements port.PetUseCase.
 type PetService struct {
-	repo port.PetRepository
+	repo           port.PetRepository
 	eventPublisher port.EventPublisher
+	authz          *Authorizer
 }
 
 // NewPetService creates a new PetService.
-func NewPetService(repo port.PetRepository, eventPublisher port.EventPublisher) *PetService {
+func NewPetService(repo port.PetRepository, eventPublisher port.EventPublisher, authz *Authorizer) *PetService {
 	return &PetService{
-		repo: repo,
+		repo:           repo,
 		eventPublisher: eventPublisher,
+		authz:          authz,
 	}
 }
 
 func (s *PetService) GetAllForUser(ctx context.Context, userID uuid.UUID) ([]domain.Pet, error) {
-    return s.repo.FindAllForUser(ctx, userID)
+	return s.repo.FindAllForUser(ctx, userID)
 }
 
+// GetAll ดึงสัตว์เลี้ยงทั้งระบบ — เฉพาะ admin เท่านั้น
+//
+// เดิม endpoint นี้ไม่มีการตรวจสิทธิ์เลย token ที่ valid ตัวไหนก็ดึงข้อมูลทั้งระบบได้ (S-2)
 func (s *PetService) GetAll(ctx context.Context) ([]domain.Pet, error) {
+	if err := s.authz.AuthorizeGlobal(ctx, domain.CapPetReadAny); err != nil {
+		return nil, err
+	}
 	return s.repo.FindAll(ctx)
 }
 
 func (s *PetService) GetByID(ctx context.Context, id uuid.UUID) (*domain.Pet, error) {
+	if err := s.authz.Authorize(ctx, id, ReqPetRead); err != nil {
+		return nil, err
+	}
 	return s.repo.FindByID(ctx, id)
 }
 
 func (s *PetService) Create(ctx context.Context, pet *domain.Pet, ownerID uuid.UUID) (*domain.Pet, error) {
 	pet.ID = uuid.New()
 	pet.OwnerID = ownerID
-	
+
 	created, err := s.repo.Save(ctx, pet)
 	if err == nil && s.eventPublisher != nil {
+		actor, _ := domain.ActorFromContext(ctx)
 		s.eventPublisher.Publish(ctx, port.EventLog{
-			EventType:  "PetProfile",
-			Action:     "Pet Created",
-			ActorID:    ownerID.String(),
-			EntityID:   pet.ID.String(),
-			EntityType: "Pet",
+			EventType:     "PetProfile",
+			Action:        "Pet Created",
+			ActorID:       ownerID.String(),
+			ActorUsername: actor.Username,
+			EntityID:      pet.ID.String(),
+			EntityType:    "Pet",
 			Payload: map[string]interface{}{
 				"name":    pet.Name,
 				"species": pet.Species,
@@ -56,6 +69,9 @@ func (s *PetService) Create(ctx context.Context, pet *domain.Pet, ownerID uuid.U
 }
 
 func (s *PetService) Update(ctx context.Context, id uuid.UUID, incoming *domain.Pet) (*domain.Pet, error) {
+	if err := s.authz.Authorize(ctx, id, ReqPetUpdate); err != nil {
+		return nil, err
+	}
 	existing, err := s.repo.FindByID(ctx, id)
 	if err != nil {
 		return nil, err
@@ -99,15 +115,23 @@ func (s *PetService) Update(ctx context.Context, id uuid.UUID, incoming *domain.
 		existing.Personality = incoming.Personality
 	}
 
+	if actor, ok := domain.ActorFromContext(ctx); ok {
+		uid := actor.UserID.String()
+		existing.UpdatedBy = &uid
+	}
+
 	updatedPet, err := s.repo.Update(ctx, existing)
 	if err == nil && s.eventPublisher != nil {
-		actorID := updatedPet.OwnerUsername
+		// C-2: เดิมใส่ OwnerUsername (username ของ "เจ้าของ") ลงในช่อง ActorID
+		// ทำให้ audit trail บอกไม่ได้ว่าใครเป็นคนแก้จริง
+		actor, _ := domain.ActorFromContext(ctx)
 		s.eventPublisher.Publish(ctx, port.EventLog{
-			EventType:  "PetProfile",
-			Action:     "Pet Updated",
-			ActorID:    actorID,
-			EntityID:   updatedPet.ID.String(),
-			EntityType: "Pet",
+			EventType:     "PetProfile",
+			Action:        "Pet Updated",
+			ActorID:       actor.UserID.String(),
+			ActorUsername: actor.Username,
+			EntityID:      updatedPet.ID.String(),
+			EntityType:    "Pet",
 			Payload: map[string]interface{}{
 				"name": updatedPet.Name,
 			},
@@ -117,19 +141,23 @@ func (s *PetService) Update(ctx context.Context, id uuid.UUID, incoming *domain.
 }
 
 func (s *PetService) Delete(ctx context.Context, id uuid.UUID) error {
+	if err := s.authz.Authorize(ctx, id, ReqPetDelete); err != nil {
+		return err
+	}
 	existing, err := s.repo.FindByID(ctx, id)
 	if err != nil {
 		return err
 	}
 	err = s.repo.Delete(ctx, id)
 	if err == nil && s.eventPublisher != nil {
-		actorID := existing.OwnerUsername
+		actor, _ := domain.ActorFromContext(ctx)
 		s.eventPublisher.Publish(ctx, port.EventLog{
-			EventType:  "PetProfile",
-			Action:     "Pet Deleted",
-			ActorID:    actorID,
-			EntityID:   id.String(),
-			EntityType: "Pet",
+			EventType:     "PetProfile",
+			Action:        "Pet Deleted",
+			ActorID:       actor.UserID.String(),
+			ActorUsername: actor.Username,
+			EntityID:      id.String(),
+			EntityType:    "Pet",
 			Payload: map[string]interface{}{
 				"name": existing.Name,
 			},

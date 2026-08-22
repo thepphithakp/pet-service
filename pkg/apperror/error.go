@@ -15,19 +15,23 @@ type AppError struct {
 	Cause   error // internal cause — logged but never sent to client
 }
 
-func (e *AppError) Error() string  { return e.Message }
-func (e *AppError) Unwrap() error  { return e.Cause }
+func (e *AppError) Error() string { return e.Message }
+func (e *AppError) Unwrap() error { return e.Cause }
 
 // Constructors
 func BadRequest(msg string, cause ...error) *AppError {
 	e := &AppError{Code: http.StatusBadRequest, Message: msg}
-	if len(cause) > 0 { e.Cause = cause[0] }
+	if len(cause) > 0 {
+		e.Cause = cause[0]
+	}
 	return e
 }
 
 func NotFound(resource string, cause ...error) *AppError {
 	e := &AppError{Code: http.StatusNotFound, Message: resource + " not found"}
-	if len(cause) > 0 { e.Cause = cause[0] }
+	if len(cause) > 0 {
+		e.Cause = cause[0]
+	}
 	return e
 }
 
@@ -48,8 +52,25 @@ func FromDomain(err error) *AppError {
 		return NotFound("Caregiver", err)
 	case errors.Is(err, domain.ErrLitterLogNotFound):
 		return NotFound("Litter log", err)
+	case errors.Is(err, domain.ErrWaterLogNotFound):
+		return NotFound("Water log", err)
+	case errors.Is(err, domain.ErrForbidden):
+		return &AppError{Code: http.StatusForbidden, Message: "You do not have permission to perform this action", Cause: err}
+	case errors.Is(err, domain.ErrUnauthenticated):
+		return Unauthorized("Authentication required")
 	case errors.Is(err, domain.ErrCaregiverDuplicate):
 		return BadRequest("Caregiver already exists for this pet", err)
+	case errors.Is(err, domain.ErrMasterDataNotFound):
+		return NotFound("Master data", err)
+	case errors.Is(err, domain.ErrMasterDataDuplicate):
+		return &AppError{Code: http.StatusConflict, Message: "รหัสนี้มีอยู่แล้ว", Cause: err}
+	case errors.Is(err, domain.ErrVersionConflict):
+		return &AppError{Code: http.StatusConflict,
+			Message: "มีคนอื่นแก้ไขรายการนี้ไปแล้ว กรุณาโหลดใหม่แล้วลองอีกครั้ง", Cause: err}
+	case errors.Is(err, domain.ErrValidation):
+		return BadRequest(err.Error(), err)
+	case errors.Is(err, domain.ErrInvalidPermission):
+		return BadRequest(err.Error(), err)
 	case errors.Is(err, domain.ErrInvalidID):
 		return BadRequest("Invalid ID format", err)
 	case errors.Is(err, gorm.ErrRecordNotFound):

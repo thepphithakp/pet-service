@@ -1,7 +1,12 @@
-FROM golang:alpine
+FROM golang:1.25-alpine
 WORKDIR /app
+
+RUN apk add --no-cache git ca-certificates tzdata
+
 COPY go.mod go.sum ./
 RUN go mod download
+
 COPY . .
-# For dev, we just run directly
-CMD ["go", "run", "main.go"]
+
+# แก้ของเดิมที่ชี้ไป main.go ที่ root ซึ่งไม่มีอยู่จริง (C-14)
+CMD ["go", "run", "./cmd/server"]

@@ -3,7 +3,7 @@ package handler
 import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
-	"github.com/vertex/pet-service/internal/domain"
+	"github.com/vertex/pet-service/internal/adapter/handler/dto"
 	"github.com/vertex/pet-service/internal/port"
 	"github.com/vertex/pet-service/pkg/apperror"
 )
@@ -21,9 +21,9 @@ func (h *WaterHandler) GetAll(c *fiber.Ctx) error {
 	if err != nil {
 		return apperror.BadRequest("Invalid pet ID", err)
 	}
-	logs, err := h.useCase.GetByPetID(c.Context(), petID)
+	logs, err := h.useCase.GetByPetID(c.UserContext(), petID)
 	if err != nil {
-		return apperror.Internal("Failed to retrieve water logs", err)
+		return apperror.FromDomain(err)
 	}
 	return c.JSON(logs)
 }
@@ -34,33 +34,35 @@ func (h *WaterHandler) Create(c *fiber.Ctx) error {
 		return apperror.BadRequest("Invalid pet ID", err)
 	}
 
-	var log domain.WaterLog
-	if err := c.BodyParser(&log); err != nil {
+	var req dto.WaterLogRequest
+	if err := c.BodyParser(&req); err != nil {
 		return apperror.BadRequest("Invalid request body", err)
 	}
+	if err := req.Validate(); err != nil {
+		return apperror.FromDomain(err)
+	}
+
+	log := req.ToDomain()
 	log.PetID = petID
-	
-	userId, _ := c.Locals("userId").(string)
-	userName, _ := c.Locals("userName").(string)
-	if userId != "" {
-		log.CreatedBy = &userId
-	}
-	if userName != "" {
-		log.CreatedByUsername = &userName
-	}
-	created, err := h.useCase.Create(c.Context(), &log)
+	setLogActor(c, &log.CreatedBy, &log.CreatedByUsername)
+
+	created, err := h.useCase.Create(c.UserContext(), &log)
 	if err != nil {
-		return apperror.Internal("Failed to create water log", err)
+		return apperror.FromDomain(err)
 	}
 	return c.Status(fiber.StatusCreated).JSON(created)
 }
 
 func (h *WaterHandler) Delete(c *fiber.Ctx) error {
+	petID, err := uuid.Parse(c.Params("id"))
+	if err != nil {
+		return apperror.BadRequest("Invalid pet ID", err)
+	}
 	logID, err := uuid.Parse(c.Params("logId"))
 	if err != nil {
 		return apperror.BadRequest("Invalid water log ID", err)
 	}
-	if err := h.useCase.Delete(c.Context(), logID); err != nil {
+	if err := h.useCase.Delete(c.UserContext(), petID, logID); err != nil {
 		return apperror.FromDomain(err)
 	}
 	return c.SendStatus(fiber.StatusNoContent)

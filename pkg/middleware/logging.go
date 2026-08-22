@@ -27,6 +27,21 @@ type LogConfig struct {
 // maxBodyLogBytes ค่า default เมื่อเปิด LogBody
 const maxBodyLogBytes = 4 << 10 // 4KB
 
+// infraPaths คือ endpoint ที่ถูกเรียกโดย k8s / Prometheus ไม่ใช่ผู้ใช้
+//
+// ไม่ log เพราะ probe ยิงทุก 2–5 วินาทีตลอดเวลา ถ้า log ด้วยจะกลบ
+// access log ของ request จริงจนหาไม่เจอ (เจอปัญหานี้ตอนไล่ incident จริง)
+// ส่วน error/สถานะที่ผิดปกติยังเห็นได้จาก probe ของ k8s เองอยู่แล้ว
+var infraPaths = map[string]bool{
+	"/livez":   true,
+	"/readyz":  true,
+	"/health":  true,
+	"/metrics": true,
+}
+
+// IsInfraPath บอกว่า path นี้เป็นของ infrastructure ไม่ใช่ traffic ของผู้ใช้
+func IsInfraPath(path string) bool { return infraPaths[path] }
+
 // sensitiveFields คือ denylist รวมศูนย์
 //
 // ของเดิมใช้ regex ตัวเดียวครอบแค่ avatarData กับ token
@@ -44,6 +59,10 @@ func NewAccessLog(cfg LogConfig) fiber.Handler {
 	}
 
 	return func(c *fiber.Ctx) error {
+		if IsInfraPath(c.Path()) {
+			return c.Next()
+		}
+
 		start := time.Now()
 		err := c.Next()
 

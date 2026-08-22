@@ -2,7 +2,7 @@ package bootstrap
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"time"
 
 	"gorm.io/driver/postgres"
@@ -28,8 +28,9 @@ func NewDB(cfg config.DBConfig) (*gorm.DB, error) {
 		if err == nil {
 			return db, nil
 		}
-		log.Printf("เชื่อมต่อ DB ครั้งที่ %d ไม่สำเร็จ (%s): %v — ลองใหม่ใน %s",
-			i+1, cfg.Redacted(), err, dbConnectBackoff)
+		slog.Warn("เชื่อมต่อ DB ไม่สำเร็จ กำลังลองใหม่",
+			"attempt", i+1, "max_attempts", dbConnectAttempts,
+			"dsn", cfg.Redacted(), "retry_in", dbConnectBackoff, "error", err)
 		time.Sleep(dbConnectBackoff)
 	}
 	return nil, fmt.Errorf("เชื่อมต่อฐานข้อมูลไม่สำเร็จหลังลอง %d ครั้ง: %w", dbConnectAttempts, err)

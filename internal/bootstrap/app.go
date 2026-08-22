@@ -76,10 +76,17 @@ func NewApp(db *gorm.DB, cfg config.Config, auth middleware.AuthConfig) (*fiber.
 	// middleware ที่เหลือไม่ทำงานต่อและ client ได้ connection ที่ตายไปเฉยๆ (S-10)
 	app.Use(recover.New())
 	app.Use(middleware.NewRequestID())
+	// metrics มาก่อน limiter เพื่อให้นับ request ที่โดน 429 ด้วย
+	app.Use(middleware.NewMetrics())
 	app.Use(middleware.NewAccessLog(middleware.LogConfig{LogBody: cfg.Log.Body}))
 	app.Use(limiter.New(limiter.Config{
 		Max:        300,
 		Expiration: time.Minute,
+		// probe ของ k8s กับ scrape ของ Prometheus ยิงถี่และมาจาก IP เดียว
+		// ถ้านับรวมด้วย พอ traffic สูงๆ probe จะโดน 429 แล้ว k8s ฆ่า pod ทิ้ง
+		Next: func(c *fiber.Ctx) bool {
+			return middleware.IsInfraPath(c.Path())
+		},
 		KeyGenerator: func(c *fiber.Ctx) string {
 			if uid, ok := c.Locals("userId").(string); ok && uid != "" {
 				return uid

@@ -19,6 +19,12 @@ func registerRoutes(app *fiber.App, h handlers, auth middleware.AuthConfig, heal
 	// คงไว้เพื่อความเข้ากันได้กับ monitoring เดิมที่อาจเรียกอยู่
 	app.Get("/health", health.Liveness)
 
+	// /metrics ให้ Prometheus มาดึง
+	//
+	// ไม่ต้องใส่ auth เพราะ ingress route แค่ prefix /api/v1 เข้ามา
+	// path นี้จึงเข้าถึงได้เฉพาะจากใน cluster เท่านั้น
+	app.Get("/metrics", middleware.MetricsHandler())
+
 	authMW := middleware.NewAuthMiddleware(auth)
 
 	// ผู้ใช้ทั่วไป

@@ -4,7 +4,7 @@ import (
 	"crypto/rsa"
 	"encoding/pem"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -44,11 +44,11 @@ func LoadPublicKeys(cfg config.JWTConfig) ([]*rsa.PublicKey, error) {
 	}
 
 	for _, k := range keys {
-		log.Printf("ยอมรับ public key kid=%s (จาก %s)", middleware.KeyID(k), source)
+		slog.Info("ยอมรับ public key", "kid", middleware.KeyID(k), "source", source)
 	}
 	if len(keys) > 1 {
-		log.Printf("⚠️  ตั้งค่า public key ไว้ %d ใบ — โหมดนี้ใช้ระหว่าง rotate key เท่านั้น "+
-			"เอาใบเก่าออกเมื่อผ่านไปนานกว่าอายุ token ที่ยาวที่สุด", len(keys))
+		slog.Warn("ตั้งค่า public key ไว้หลายใบ — โหมดนี้ใช้ระหว่าง rotate key เท่านั้น "+
+			"เอาใบเก่าออกเมื่อผ่านไปนานกว่าอายุ token ที่ยาวที่สุด", "count", len(keys))
 	}
 	return keys, nil
 }
@@ -93,8 +93,8 @@ func NewAuthConfig(cfg config.JWTConfig) (middleware.AuthConfig, error) {
 		adminIDs[id] = true
 	}
 	if len(adminIDs) > 0 {
-		log.Printf("⚠️  ADMIN_USER_IDS ตั้งไว้ %d รายการ — เป็นสะพานชั่วคราวระหว่างรอ roles claim "+
-			"จาก auth-service ถอดออกเมื่อพร้อม", len(adminIDs))
+		slog.Warn("ADMIN_USER_IDS ถูกตั้งไว้ — เป็นสะพานชั่วคราวระหว่างรอ roles claim "+
+			"จาก auth-service ถอดออกเมื่อพร้อม", "count", len(adminIDs))
 	}
 
 	return middleware.AuthConfig{

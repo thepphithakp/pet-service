@@ -2,7 +2,7 @@ package middleware
 
 import (
 	"errors"
-	"log"
+	"log/slog"
 
 	"github.com/gofiber/fiber/v2"
 
@@ -12,14 +12,20 @@ import (
 // ErrorHandler is the global Fiber error handler.
 // All handler errors are funneled here — single place for error → response mapping.
 func ErrorHandler(c *fiber.Ctx, err error) error {
-	reqID := c.Get("X-Request-Id")
+	reqID := c.Get(HeaderRequestID)
 
 	// 1. Our typed AppError
 	var appErr *apperror.AppError
 	if apperror.IsAppError(err, &appErr) {
 		if appErr.Cause != nil {
-			log.Printf("[ERROR] reqId=%s status=%d msg=%q cause=%v",
-				reqID, appErr.Code, appErr.Message, appErr.Cause)
+			slog.ErrorContext(c.UserContext(), "request ล้มเหลว",
+				slog.String("request_id", reqID),
+				slog.String("method", c.Method()),
+				slog.String("path", c.Path()),
+				slog.Int("status", appErr.Code),
+				slog.String("message", appErr.Message),
+				slog.Any("cause", appErr.Cause),
+			)
 		}
 		return c.Status(appErr.Code).JSON(fiber.Map{
 			"error":     appErr.Message,
@@ -37,7 +43,13 @@ func ErrorHandler(c *fiber.Ctx, err error) error {
 	}
 
 	// 3. Untyped / unexpected — log and return generic 500
-	log.Printf("[ERROR] reqId=%s unhandled: %v", reqID, err)
+	slog.ErrorContext(c.UserContext(), "error ที่ไม่ได้จัดประเภทไว้",
+		slog.String("request_id", reqID),
+		slog.String("method", c.Method()),
+		slog.String("path", c.Path()),
+		slog.Int("status", fiber.StatusInternalServerError),
+		slog.Any("error", err),
+	)
 	return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 		"error":     "Internal server error",
 		"requestId": reqID,

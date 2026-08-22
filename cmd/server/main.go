@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"errors"
-	"log"
 	"log/slog"
 	"net/http"
 	"os"
@@ -19,10 +18,23 @@ import (
 	"github.com/vertex/pet-service/pkg/middleware"
 )
 
+// fatal จบ process พร้อม log ที่เป็น JSON เหมือน log line อื่น
+//
+// log.Fatal ของ stdlib ผ่าน bridge ของ slog ก็จริง แต่ออกมาเป็น level INFO เสมอ
+// ทำให้ตอนไล่ปัญหา กรอง level=ERROR แล้วไม่เจอสาเหตุที่ทำให้ pod ตาย
+func fatal(msg string, args ...any) {
+	slog.Error(msg, args...)
+	os.Exit(1)
+}
+
 func main() {
+	// ตั้ง JSON logger ก่อนอ่าน config เพื่อให้ error ตอนอ่าน config เป็น JSON ด้วย
+	// เดี๋ยวตั้งซ้ำอีกครั้งด้วย level จริงจาก config
+	middleware.SetupLogger("")
+
 	cfg, err := config.Load()
 	if err != nil {
-		log.Fatalf("ตั้งค่าไม่ถูกต้อง: %v", err)
+		fatal("ตั้งค่าไม่ถูกต้อง", "error", err)
 	}
 
 	middleware.SetupLogger(cfg.Log.Level)
@@ -32,18 +44,18 @@ func main() {
 
 	db, err := bootstrap.NewDB(cfg.DB)
 	if err != nil {
-		log.Fatal(err)
+		fatal("เชื่อมต่อฐานข้อมูลไม่สำเร็จ", "error", err)
 	}
 
 	// schema จัดการโดย Flyway แล้ว ไม่ใช่ AutoMigrate
 	// ตรงนี้แค่ยืนยันว่า migration รันครบก่อนรับ request
 	if err := bootstrap.AssertSchemaVersion(context.Background(), db); err != nil {
-		log.Fatal(err)
+		fatal("schema ยังไม่พร้อม (Flyway migration รันครบหรือยัง)", "error", err)
 	}
 
 	auth, err := bootstrap.NewAuthConfig(cfg.JWT)
 	if err != nil {
-		log.Fatal(err)
+		fatal("ตั้งค่า JWT ไม่สำเร็จ", "error", err)
 	}
 
 	app, health, publisher := bootstrap.NewApp(db, cfg, auth)

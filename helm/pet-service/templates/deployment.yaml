@@ -5,7 +5,11 @@ metadata:
   labels:
     {{- include "pet-service.labels" . | nindent 4 }}
 spec:
+  {{- if not .Values.autoscaling.enabled }}
+  # ตั้ง replicas เฉพาะตอนไม่ได้เปิด HPA ไม่งั้น helm กับ HPA จะแย่งกันตั้งค่า
+  # แล้ว pod จะถูก scale ขึ้นลงทุกครั้งที่ deploy
   replicas: {{ .Values.replicaCount }}
+  {{- end }}
   selector:
     matchLabels:
       {{- include "pet-service.selectorLabels" . | nindent 6 }}

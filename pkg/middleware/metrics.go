@@ -1,0 +1,91 @@
+package middleware
+
+import (
+	"strconv"
+
+	"github.com/gofiber/adaptor/v2"
+	"github.com/gofiber/fiber/v2"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+)
+
+// ชุด metric ของ HTTP layer
+//
+// ใช้ c.Route().Path เป็น label ไม่ใช่ c.Path() เพราะ path จริงมี id ปนอยู่
+// (/api/v1/pets/<uuid>/litter-logs) ถ้าใช้ path ดิบ label จะแตกไม่จำกัด
+// ทำให้ Prometheus ระเบิด (cardinality explosion)
+var (
+	httpRequestsTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "http_requests_total",
+			Help: "จำนวน HTTP request ทั้งหมด แยกตาม method / route / status",
+		},
+		[]string{"method", "route", "status"},
+	)
+
+	httpRequestDuration = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "http_request_duration_seconds",
+			Help:    "เวลาที่ใช้ต่อ request",
+			Buckets: prometheus.DefBuckets,
+		},
+		[]string{"method", "route"},
+	)
+
+	httpRequestsInFlight = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "http_requests_in_flight",
+			Help: "จำนวน request ที่กำลังทำงานอยู่",
+		},
+	)
+)
+
+func init() {
+	prometheus.MustRegister(httpRequestsTotal, httpRequestDuration, httpRequestsInFlight)
+}
+
+// NewMetrics คืน middleware ที่เก็บ metric ของทุก request
+func NewMetrics() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		httpRequestsInFlight.Inc()
+		defer httpRequestsInFlight.Dec()
+
+		timer := prometheus.NewTimer(prometheus.ObserverFunc(func(v float64) {
+			httpRequestDuration.WithLabelValues(c.Method(), routeLabel(c)).Observe(v)
+		}))
+
+		err := c.Next()
+
+		// อ่าน status หลัง c.Next() เพราะ error handler อาจเปลี่ยน status
+		status := c.Response().StatusCode()
+		if err != nil {
+			if fe, ok := err.(*fiber.Error); ok {
+				status = fe.Code
+			}
+		}
+		httpRequestsTotal.WithLabelValues(c.Method(), routeLabel(c), strconv.Itoa(status)).Inc()
+		timer.ObserveDuration()
+
+		return err
+	}
+}
+
+// routeLabel คืน pattern ของ route ที่จับคู่ได้ ไม่ใช่ path จริง
+// ถ้าไม่ตรง route ไหนเลย (404) ยุบเป็น "unmatched" เพื่อไม่ให้ label แตก
+func routeLabel(c *fiber.Ctx) string {
+	r := c.Route()
+	if r == nil || r.Path == "" {
+		return "unmatched"
+	}
+	// request ที่ไม่ตรง route ไหนเลย fiber จะคืน route ของ app.Use ซึ่ง Path = "/"
+	// ถ้า pattern เป็น "/" แต่ path จริงไม่ใช่ "/" แปลว่าไม่ได้ match จริง
+	if r.Path == "/" && c.Path() != "/" {
+		return "unmatched"
+	}
+	return r.Path
+}
+
+// MetricsHandler คือ endpoint /metrics ให้ Prometheus มาดึง
+func MetricsHandler() fiber.Handler {
+	return adaptor.HTTPHandler(promhttp.Handler())
+}

@@ -106,6 +106,46 @@ startupProbe:
   periodSeconds: 2
   failureThreshold: 30
 
+# --- Observability ---
+#
+# ServiceMonitor ให้ Prometheus Operator ในคลัสเตอร์มาดึง /metrics
+# /metrics ไม่ได้เปิดออกภายนอก เพราะ ingress route แค่ prefix /api/v1
+serviceMonitor:
+  enabled: true
+  interval: 30s
+  scrapeTimeout: 10s
+  # ปล่อยว่าง = สร้างใน namespace เดียวกับ release
+  namespace: ""
+  # Prometheus ในคลัสเตอร์นี้ตั้ง serviceMonitorSelector ไว้ที่
+  #   matchLabels: {release: prometheus-grafana}
+  # ถ้าไม่ใส่ label นี้ ServiceMonitor จะถูกสร้างแต่ไม่มีใครมาดึงเลย
+  # (ตรวจได้ด้วย: kubectl get prometheus -A -o jsonpath='{.items[*].spec.serviceMonitorSelector}')
+  additionalLabels:
+    release: prometheus-grafana
+
+# --- Scaling & availability ---
+#
+# ⚠️ ทั้งสองอย่างนี้ยังปิดอยู่โดยตั้งใจ เพราะคลัสเตอร์ตอนนี้มี node เดียว
+# และ replicaCount = 1
+#
+# PodDisruptionBudget ที่ minAvailable: 1 บน 1 replica จะทำให้
+# `kubectl drain` ค้างตลอดไป (ไม่มีทางเหลือ pod ครบตามที่ขอ) กลายเป็น
+# ทำให้ maintenance ทำไม่ได้แทนที่จะช่วย — เปิดเมื่อ replicaCount >= 2 เท่านั้น
+podDisruptionBudget:
+  enabled: false
+  minAvailable: 1
+  maxUnavailable: ""
+
+# HPA ต้องมี metrics-server (คลัสเตอร์นี้มีแล้ว) และ resources.requests ที่ตั้งไว้
+# เปิดเมื่อพร้อมรับ pod หลายตัว — ต้องตรวจก่อนว่า rate limiter ซึ่งเก็บ state
+# ในหน่วยความจำของแต่ละ pod ยังให้ผลที่ยอมรับได้เมื่อกระจายหลาย pod
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: ""
+
 shutdown:
   # รอหลังปิด readiness ก่อนหยุดรับ connection ใหม่
   drainDelay: 5s

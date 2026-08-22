@@ -103,3 +103,21 @@ type unexpectedStatusError struct{ status int }
 func (e *unexpectedStatusError) Error() string {
 	return "event-service ตอบ status " + http.StatusText(e.status)
 }
+
+// Drain รอ event ที่กำลังส่งอยู่ให้ทำงานจนจบ
+//
+// เรียกตอนปิดตัว — ไม่งั้น event ที่เพิ่งถูกสร้างจาก request สุดท้าย
+// จะหายไปพร้อมกับ process
+//
+// จองสล็อตให้ครบทุกช่องเท่ากับรอให้ goroutine ที่ค้างอยู่ปล่อยสล็อตหมด
+func (p *HTTPEventPublisher) Drain(ctx context.Context) {
+	for i := 0; i < maxInFlight; i++ {
+		select {
+		case p.slots <- struct{}{}:
+		case <-ctx.Done():
+			slog.WarnContext(ctx, "หมดเวลารอ event ที่ค้างอยู่ อาจมี event หาย",
+				"remaining", maxInFlight-i)
+			return
+		}
+	}
+}

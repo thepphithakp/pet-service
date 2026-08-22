@@ -50,6 +50,10 @@ spec:
               value: {{ .Values.db.sslMode | quote }}
             - name: DB_SEARCH_PATH
               value: {{ .Values.db.searchPath | quote }}
+            - name: SHUTDOWN_DRAIN_DELAY
+              value: {{ .Values.shutdown.drainDelay | quote }}
+            - name: SHUTDOWN_TIMEOUT
+              value: {{ .Values.shutdown.timeout | quote }}
             - name: DB_USER
               valueFrom:
                 secretKeyRef:
@@ -78,6 +82,18 @@ spec:
             {{- with .Values.env }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
+          {{- with .Values.startupProbe }}
+          startupProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.livenessProbe }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.readinessProbe }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
       {{- with .Values.nodeSelector }}

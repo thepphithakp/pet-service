@@ -7,9 +7,17 @@ import (
 )
 
 // registerRoutes รวมการประกาศ route ทั้งหมดไว้ที่เดียว
-func registerRoutes(app *fiber.App, h handlers, auth middleware.AuthConfig) {
+func registerRoutes(app *fiber.App, h handlers, auth middleware.AuthConfig, health *Health) {
 	// Public — ไม่ต้อง auth
-	app.Get("/health", func(c *fiber.Ctx) error { return c.SendString("OK") })
+	//
+	// /livez  ไม่เช็ค dependency เลย — ถ้าเช็ค DB แล้ว DB ล่ม k8s จะฆ่าทุก pod
+	//         พร้อมกันแล้ววนรีสตาร์ตไม่จบ ทำให้เหตุการณ์แย่ลง
+	// /readyz เช็ค DB + สถานะปิดตัว — ล้มแล้ว pod แค่ถูกถอดออกจาก endpoints
+	app.Get("/livez", health.Liveness)
+	app.Get("/readyz", health.Readiness)
+
+	// คงไว้เพื่อความเข้ากันได้กับ monitoring เดิมที่อาจเรียกอยู่
+	app.Get("/health", health.Liveness)
 
 	authMW := middleware.NewAuthMiddleware(auth)
 

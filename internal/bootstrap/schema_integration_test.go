@@ -26,7 +26,45 @@ func openTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("ต่อฐานข้อมูลไม่ได้: %v", err)
 	}
+	assertDisposableDB(t, db)
 	return db
+}
+
+// assertDisposableDB กันไม่ให้ integration test (ซึ่งเขียนและลบข้อมูล)
+// ไปรันใส่ฐานข้อมูลจริงโดยไม่ตั้งใจ
+//
+// เคสที่เกิดขึ้นจริง: มี kubectl/k9s port-forward ของ postgres ใน cluster
+// ค้างอยู่ที่ localhost:5432 ทำให้ DSN default ของ make test-integration
+// ชี้ไป production แทน docker รอบนั้นรอดเพราะ role ไม่ตรงเท่านั้น
+//
+// ลายนิ้วมือที่ใช้คือ repeatable migration ของ seed ตัวอย่างสำหรับ dev
+// (pet/seed/R__9000_dev_sample_pets.sql) ซึ่ง FLYWAY_LOCATIONS ของ prod
+// ไม่เคยโหลด จึงมีได้เฉพาะฐานข้อมูลที่ยกมาเพื่อ dev/test เท่านั้น
+func assertDisposableDB(t *testing.T, db *gorm.DB) {
+	t.Helper()
+
+	const devSeedDescription = "9000 dev sample pets"
+
+	var n int64
+	err := db.Raw(
+		`SELECT count(*) FROM flyway_schema_history WHERE description = ? AND success`,
+		devSeedDescription,
+	).Scan(&n).Error
+	if err != nil {
+		t.Fatalf("ตรวจ flyway_schema_history ไม่ได้ (ฐานข้อมูลนี้อาจไม่ใช่ของ dev): %v", err)
+	}
+	if n == 0 {
+		var dbName, user string
+		db.Raw("SELECT current_database()").Scan(&dbName)
+		db.Raw("SELECT current_user").Scan(&user)
+		t.Fatalf(
+			"ปฏิเสธการรัน integration test: ฐานข้อมูล %q (user %q) ไม่มี seed ของ dev "+
+				"(%q) จึงถือว่าไม่ใช่ฐานข้อมูลชั่วคราวที่ทิ้งได้\n"+
+				"ถ้าตั้งใจรัน local ให้ `make db-reset` แล้วตรวจว่าไม่มี port-forward "+
+				"ของ postgres ตัวอื่นทับพอร์ตอยู่ (lsof -nP -iTCP:5432 -sTCP:LISTEN)",
+			dbName, user, devSeedDescription,
+		)
+	}
 }
 
 // TestSchemaMatchesModels คือ safety net ที่มาแทน AutoMigrate

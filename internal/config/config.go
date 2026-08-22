@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 )
 
 type Config struct {
@@ -16,7 +17,23 @@ type Config struct {
 
 	EventServiceURL string
 
-	Log LogConfig
+	Log      LogConfig
+	Shutdown ShutdownConfig
+}
+
+// ShutdownConfig คุมพฤติกรรมตอนปิดตัว
+type ShutdownConfig struct {
+	// DrainDelay คือเวลารอหลังปิด readiness ก่อนหยุดรับ connection ใหม่
+	//
+	// ต้องมากกว่ารอบของ readinessProbe (periodSeconds × failureThreshold)
+	// ไม่งั้นจะปิด listener ก่อนที่ k8s จะถอด endpoint เสร็จ
+	// แล้ว request ที่ยังถูกส่งมาจะโดน connection refused
+	DrainDelay time.Duration
+	// Timeout คือเวลาสูงสุดที่รอ request ที่ค้างอยู่ให้ทำงานจนจบ
+	//
+	// ต้องน้อยกว่า terminationGracePeriodSeconds ของ pod
+	// ไม่งั้น k8s จะ SIGKILL ก่อนที่จะปิดเสร็จ
+	Timeout time.Duration
 }
 
 type LogConfig struct {
@@ -115,6 +132,10 @@ func Load() (Config, error) {
 			Level: env("LOG_LEVEL", "info"),
 			Body:  os.Getenv("LOG_BODY") == "true",
 		},
+		Shutdown: ShutdownConfig{
+			DrainDelay: envDuration("SHUTDOWN_DRAIN_DELAY", 5*time.Second),
+			Timeout:    envDuration("SHUTDOWN_TIMEOUT", 20*time.Second),
+		},
 	}
 	return cfg, cfg.Validate()
 }
@@ -152,6 +173,19 @@ func splitList(v string) []string {
 		}
 	}
 	return out
+}
+
+// envDuration อ่านค่าเวลาแบบ "5s" "1m" ถ้าอ่านไม่ได้ใช้ค่า default
+func envDuration(key string, fallback time.Duration) time.Duration {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil {
+		return fallback
+	}
+	return d
 }
 
 func env(key, fallback string) string {

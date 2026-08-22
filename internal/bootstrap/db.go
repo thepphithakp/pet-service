@@ -34,3 +34,14 @@ func NewDB(cfg config.DBConfig) (*gorm.DB, error) {
 	}
 	return nil, fmt.Errorf("เชื่อมต่อฐานข้อมูลไม่สำเร็จหลังลอง %d ครั้ง: %w", dbConnectAttempts, err)
 }
+
+// CloseDB ปิด connection pool
+//
+// gorm.DB ไม่มี Close() เอง ต้องดึง *sql.DB ที่อยู่ข้างในออกมาก่อน
+func CloseDB(db *gorm.DB) error {
+	sqlDB, err := db.DB()
+	if err != nil {
+		return err
+	}
+	return sqlDB.Close()
+}

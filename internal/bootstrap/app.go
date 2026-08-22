@@ -24,6 +24,7 @@ import (
 const bodyLimit = 50 * 1024 * 1024
 
 // handlers รวม input adapter ทั้งหมดที่ต้องลงทะเบียน route
+// deps คือสิ่งที่ผู้เรียกต้องใช้ต่อหลังสร้าง app เสร็จ
 type handlers struct {
 	pet        *handler.PetHandler
 	caregiver  *handler.CaregiverHandler
@@ -33,7 +34,7 @@ type handlers struct {
 }
 
 // wire ประกอบ repository → service → handler
-func wire(db *gorm.DB, cfg config.Config) handlers {
+func wire(db *gorm.DB, cfg config.Config) (handlers, *event.HTTPEventPublisher) {
 	// Output adapters
 	petRepo := repository.NewGORMPetRepository(db)
 	caregiverRepo := repository.NewGORMCaregiverRepository(db)
@@ -61,11 +62,11 @@ func wire(db *gorm.DB, cfg config.Config) handlers {
 		litter:     handler.NewLitterHandler(litterService),
 		water:      handler.NewWaterHandler(waterService),
 		masterData: handler.NewMasterDataHandler(masterDataService, masterDataService),
-	}
+	}, eventPublisher
 }
 
 // NewApp สร้าง fiber app ที่พร้อมรับ request
-func NewApp(db *gorm.DB, cfg config.Config, auth middleware.AuthConfig) *fiber.App {
+func NewApp(db *gorm.DB, cfg config.Config, auth middleware.AuthConfig) (*fiber.App, *Health, *event.HTTPEventPublisher) {
 	app := fiber.New(fiber.Config{
 		BodyLimit:    bodyLimit,
 		ErrorHandler: middleware.ErrorHandler,
@@ -87,6 +88,8 @@ func NewApp(db *gorm.DB, cfg config.Config, auth middleware.AuthConfig) *fiber.A
 		},
 	}))
 
-	registerRoutes(app, wire(db, cfg), auth)
-	return app
+	h, publisher := wire(db, cfg)
+	health := NewHealth(db)
+	registerRoutes(app, h, auth, health)
+	return app, health, publisher
 }

@@ -85,10 +85,11 @@ jobs:
           docker run --rm --network host \
             -v "$PWD/.migrations/pet/migration:/flyway/sql/migration:ro" \
             -v "$PWD/.migrations/pet/codeowned:/flyway/sql/codeowned:ro" \
+            -v "$PWD/.migrations/pet/seed:/flyway/sql/seed:ro" \
             -e FLYWAY_URL=jdbc:postgresql://localhost:5432/vertex \
             -e FLYWAY_USER=vertex -e FLYWAY_PASSWORD=vertex \
             -e FLYWAY_SCHEMAS=pet -e FLYWAY_DEFAULT_SCHEMA=pet \
-            -e FLYWAY_LOCATIONS=filesystem:/flyway/sql/migration,filesystem:/flyway/sql/codeowned \
+            -e FLYWAY_LOCATIONS=filesystem:/flyway/sql/migration,filesystem:/flyway/sql/codeowned,filesystem:/flyway/sql/seed \
             -e FLYWAY_BASELINE_ON_MIGRATE=true -e FLYWAY_BASELINE_VERSION=1 \
             -e FLYWAY_CLEAN_DISABLED=true \
             flyway/flyway:11-alpine migrate
@@ -99,10 +100,11 @@ jobs:
           docker run --rm --network host \
             -v "$PWD/.migrations/pet/migration:/flyway/sql/migration:ro" \
             -v "$PWD/.migrations/pet/codeowned:/flyway/sql/codeowned:ro" \
+            -v "$PWD/.migrations/pet/seed:/flyway/sql/seed:ro" \
             -e FLYWAY_URL=jdbc:postgresql://localhost:5432/vertex \
             -e FLYWAY_USER=vertex -e FLYWAY_PASSWORD=vertex \
             -e FLYWAY_SCHEMAS=pet -e FLYWAY_DEFAULT_SCHEMA=pet \
-            -e FLYWAY_LOCATIONS=filesystem:/flyway/sql/migration,filesystem:/flyway/sql/codeowned \
+            -e FLYWAY_LOCATIONS=filesystem:/flyway/sql/migration,filesystem:/flyway/sql/codeowned,filesystem:/flyway/sql/seed \
             -e FLYWAY_CLEAN_DISABLED=true \
             flyway/flyway:11-alpine migrate
 
@@ -111,18 +113,20 @@ jobs:
           docker run --rm --network host \
             -v "$PWD/.migrations/pet/migration:/flyway/sql/migration:ro" \
             -v "$PWD/.migrations/pet/codeowned:/flyway/sql/codeowned:ro" \
+            -v "$PWD/.migrations/pet/seed:/flyway/sql/seed:ro" \
             -e FLYWAY_URL=jdbc:postgresql://localhost:5432/vertex \
             -e FLYWAY_USER=vertex -e FLYWAY_PASSWORD=vertex \
             -e FLYWAY_SCHEMAS=pet -e FLYWAY_DEFAULT_SCHEMA=pet \
-            -e FLYWAY_LOCATIONS=filesystem:/flyway/sql/migration,filesystem:/flyway/sql/codeowned \
+            -e FLYWAY_LOCATIONS=filesystem:/flyway/sql/migration,filesystem:/flyway/sql/codeowned,filesystem:/flyway/sql/seed \
             flyway/flyway:11-alpine validate
           docker run --rm --network host \
             -v "$PWD/.migrations/pet/migration:/flyway/sql/migration:ro" \
             -v "$PWD/.migrations/pet/codeowned:/flyway/sql/codeowned:ro" \
+            -v "$PWD/.migrations/pet/seed:/flyway/sql/seed:ro" \
             -e FLYWAY_URL=jdbc:postgresql://localhost:5432/vertex \
             -e FLYWAY_USER=vertex -e FLYWAY_PASSWORD=vertex \
             -e FLYWAY_SCHEMAS=pet -e FLYWAY_DEFAULT_SCHEMA=pet \
-            -e FLYWAY_LOCATIONS=filesystem:/flyway/sql/migration,filesystem:/flyway/sql/codeowned \
+            -e FLYWAY_LOCATIONS=filesystem:/flyway/sql/migration,filesystem:/flyway/sql/codeowned,filesystem:/flyway/sql/seed \
             flyway/flyway:11-alpine info
 
       # gate สำคัญที่สุดของเฟสนี้: schema ที่ Flyway สร้าง ต้องตรงกับ GORM model

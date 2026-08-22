@@ -3,6 +3,7 @@ package config
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 func setDBEnv(t *testing.T) {
@@ -85,5 +86,33 @@ func TestRedacted_HidesPassword(t *testing.T) {
 	d := DBConfig{Host: "pg", User: "u", Password: "ลับมาก", Name: "db", Port: "5432", SSLMode: "disable"}
 	if strings.Contains(d.Redacted(), "ลับมาก") {
 		t.Fatal("Redacted ต้องไม่มีรหัสผ่าน")
+	}
+}
+
+func TestShutdownConfig(t *testing.T) {
+	setDBEnv(t)
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Shutdown.DrainDelay != 5*time.Second {
+		t.Fatalf("DrainDelay = %v ต้องการ 5s", cfg.Shutdown.DrainDelay)
+	}
+	if cfg.Shutdown.Timeout != 20*time.Second {
+		t.Fatalf("Timeout = %v ต้องการ 20s", cfg.Shutdown.Timeout)
+	}
+
+	// ค่าที่อ่านไม่ได้ต้อง fallback ไม่ใช่กลายเป็น 0
+	// ถ้าเป็น 0 จะปิด listener ทันทีโดยไม่รอ endpoint ถอด → drop request
+	t.Setenv("SHUTDOWN_DRAIN_DELAY", "ไม่ใช่เวลา")
+	cfg2, _ := Load()
+	if cfg2.Shutdown.DrainDelay != 5*time.Second {
+		t.Fatalf("ค่าผิดรูปแบบต้อง fallback เป็น 5s ได้ %v", cfg2.Shutdown.DrainDelay)
+	}
+
+	t.Setenv("SHUTDOWN_DRAIN_DELAY", "3s")
+	cfg3, _ := Load()
+	if cfg3.Shutdown.DrainDelay != 3*time.Second {
+		t.Fatalf("DrainDelay = %v ต้องการ 3s", cfg3.Shutdown.DrainDelay)
 	}
 }

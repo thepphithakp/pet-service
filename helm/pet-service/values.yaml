@@ -63,7 +63,54 @@ nodeSelector: {}
 tolerations: []
 affinity: {}
 
-terminationGracePeriodSeconds: 30
+# --- Lifecycle ---
+#
+# ⚠️ ค่าเหล่านี้สัมพันธ์กัน ห้ามแก้ตัวเดียวโดยไม่ดูตัวอื่น
+#
+#   SHUTDOWN_DRAIN_DELAY (5s)
+#     > readinessProbe.periodSeconds × failureThreshold (5×2 = 10s)  ← ยังไม่พอ ดูหมายเหตุ
+#   SHUTDOWN_DRAIN_DELAY + SHUTDOWN_TIMEOUT (5+20 = 25s)
+#     < terminationGracePeriodSeconds (45s)  ✅ ไม่งั้นโดน SIGKILL ก่อนปิดเสร็จ
+#
+# หมายเหตุ: จริงๆ แล้ว k8s ถอด endpoint ทันทีที่ pod เข้าสถานะ Terminating
+# ไม่ต้องรอ readinessProbe fail ครบ failureThreshold
+# DrainDelay จึงมีไว้รอให้ kube-proxy ทุก node อัปเดต iptables ตามเท่านั้น
+# 5 วินาทีพอสำหรับคลัสเตอร์ขนาดนี้
+terminationGracePeriodSeconds: 45
+
+# livenessProbe จงใจไม่เช็ค DB
+# ถ้าเช็คแล้ว DB ล่ม k8s จะฆ่าทุก pod พร้อมกันแล้ววนรีสตาร์ตไม่จบ
+livenessProbe:
+  httpGet:
+    path: /livez
+    port: http
+  periodSeconds: 15
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+# readinessProbe เช็ค DB — ล้มแล้วแค่ถูกถอดออกจาก endpoints ไม่ถูกฆ่า
+readinessProbe:
+  httpGet:
+    path: /readyz
+    port: http
+  periodSeconds: 5
+  timeoutSeconds: 3
+  failureThreshold: 2
+
+# startupProbe ให้เวลา pod ตอนบูต (ต่อ DB + ตรวจ schema version)
+# ระหว่างนี้ liveness ยังไม่ทำงาน จึงไม่โดนฆ่าเพราะบูตช้า
+startupProbe:
+  httpGet:
+    path: /livez
+    port: http
+  periodSeconds: 2
+  failureThreshold: 30
+
+shutdown:
+  # รอหลังปิด readiness ก่อนหยุดรับ connection ใหม่
+  drainDelay: 5s
+  # เวลาสูงสุดที่รอ request ที่ค้างอยู่ — ต้องน้อยกว่า terminationGracePeriodSeconds
+  timeout: 20s
 
 # --- Database -------------------------------------------------------------
 db:

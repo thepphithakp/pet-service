@@ -1,12 +1,18 @@
 package handler
 
 import (
+	"fmt"
+
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
+	"github.com/vertex/pet-service/internal/adapter/handler/dto"
 	"github.com/vertex/pet-service/internal/domain"
 	"github.com/vertex/pet-service/internal/port"
 	"github.com/vertex/pet-service/pkg/apperror"
 )
+
+// maxBatchSize จำกัดขนาด batch เพื่อไม่ให้ request เดียวกินหน่วยความจำจนล้ม
+const maxBatchSize = 500
 
 // LitterHandler handles HTTP requests for litter log operations.
 type LitterHandler struct {
@@ -22,9 +28,9 @@ func (h *LitterHandler) GetAll(c *fiber.Ctx) error {
 	if err != nil {
 		return apperror.BadRequest("Invalid pet ID", err)
 	}
-	logs, err := h.useCase.GetForPet(c.Context(), petID)
+	logs, err := h.useCase.GetForPet(c.UserContext(), petID)
 	if err != nil {
-		return apperror.Internal("Failed to fetch litter logs", err)
+		return apperror.FromDomain(err)
 	}
 	return c.JSON(logs)
 }
@@ -35,23 +41,21 @@ func (h *LitterHandler) Create(c *fiber.Ctx) error {
 		return apperror.BadRequest("Invalid pet ID", err)
 	}
 
-	var log domain.LitterLog
-	if err := c.BodyParser(&log); err != nil {
+	var req dto.LitterLogRequest
+	if err := c.BodyParser(&req); err != nil {
 		return apperror.BadRequest("Invalid request body", err)
 	}
-	log.PetID = petID
+	if err := req.Validate(); err != nil {
+		return apperror.FromDomain(err)
+	}
 
-	userId, _ := c.Locals("userId").(string)
-	userName, _ := c.Locals("userName").(string)
-	if userId != "" {
-		log.CreatedBy = &userId
-	}
-	if userName != "" {
-		log.CreatedByUsername = &userName
-	}
-	created, err := h.useCase.Create(c.Context(), &log)
+	log := req.ToDomain()
+	log.PetID = petID
+	setLogActor(c, &log.CreatedBy, &log.CreatedByUsername)
+
+	created, err := h.useCase.Create(c.UserContext(), &log)
 	if err != nil {
-		return apperror.Internal("Failed to create litter log", err)
+		return apperror.FromDomain(err)
 	}
 	return c.Status(fiber.StatusCreated).JSON(created)
 }
@@ -62,37 +66,41 @@ func (h *LitterHandler) CreateBatch(c *fiber.Ctx) error {
 		return apperror.BadRequest("Invalid pet ID", err)
 	}
 
-	var logs []domain.LitterLog
-	if err := c.BodyParser(&logs); err != nil {
+	var reqs []dto.BatchLitterLogRequest
+	if err := c.BodyParser(&reqs); err != nil {
 		return apperror.BadRequest("Invalid request body (expected array)", err)
 	}
-	userId, _ := c.Locals("userId").(string)
-	userName, _ := c.Locals("userName").(string)
-
-	for i := range logs {
-		logs[i].PetID = petID
-		if userId != "" {
-			uid := userId
-			logs[i].CreatedBy = &uid
-		}
-		if userName != "" {
-			logs[i].CreatedByUsername = &userName
-		}
+	if len(reqs) > maxBatchSize {
+		return apperror.BadRequest(fmt.Sprintf("ส่งได้สูงสุด %d รายการต่อครั้ง", maxBatchSize))
 	}
 
-	created, err := h.useCase.CreateBatch(c.Context(), logs)
+	logs := make([]domain.LitterLog, len(reqs))
+	for i, r := range reqs {
+		if err := r.Validate(); err != nil {
+			return apperror.FromDomain(fmt.Errorf("รายการที่ %d — %w", i+1, err))
+		}
+		logs[i] = r.ToDomain()
+		logs[i].PetID = petID
+		setLogActor(c, &logs[i].CreatedBy, &logs[i].CreatedByUsername)
+	}
+
+	created, err := h.useCase.CreateBatch(c.UserContext(), logs)
 	if err != nil {
-		return apperror.Internal("Failed to batch create litter logs", err)
+		return apperror.FromDomain(err)
 	}
 	return c.Status(fiber.StatusCreated).JSON(created)
 }
 
 func (h *LitterHandler) Delete(c *fiber.Ctx) error {
+	petID, err := uuid.Parse(c.Params("id"))
+	if err != nil {
+		return apperror.BadRequest("Invalid pet ID", err)
+	}
 	logID, err := uuid.Parse(c.Params("logId"))
 	if err != nil {
 		return apperror.BadRequest("Invalid litter log ID", err)
 	}
-	if err := h.useCase.Delete(c.Context(), logID); err != nil {
+	if err := h.useCase.Delete(c.UserContext(), petID, logID); err != nil {
 		return apperror.FromDomain(err)
 	}
 	return c.SendStatus(fiber.StatusNoContent)
@@ -115,11 +123,11 @@ func NewMasterDataHandler(uc port.MasterDataUseCase) *MasterDataHandler {
 }
 
 func (h *MasterDataHandler) GetCatBreeds(c *fiber.Ctx) error {
-	return c.JSON(h.useCase.GetCatBreeds(c.Context()))
+	return c.JSON(h.useCase.GetCatBreeds(c.UserContext()))
 }
 
 func (h *MasterDataHandler) GetBloodTypes(c *fiber.Ctx) error {
-	return c.JSON(h.useCase.GetBloodTypes(c.Context()))
+	return c.JSON(h.useCase.GetBloodTypes(c.UserContext()))
 }
 
 func (h *MasterDataHandler) RegisterRoutes(r fiber.Router) {

@@ -4,9 +4,11 @@
 package bootstrap
 
 import (
-	"crypto/rsa"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/limiter"
+	"github.com/gofiber/fiber/v2/middleware/recover"
 	"gorm.io/gorm"
 
 	"github.com/vertex/pet-service/internal/adapter/event"
@@ -35,15 +37,20 @@ func wire(db *gorm.DB, cfg config.Config) handlers {
 	// Output adapters
 	petRepo := repository.NewGORMPetRepository(db)
 	caregiverRepo := repository.NewGORMCaregiverRepository(db)
+	permissionRepo := repository.NewGORMPermissionRepository(db)
 	litterRepo := repository.NewGORMLitterRepository(db)
 	waterRepo := repository.NewGORMWaterRepository(db)
+	capabilityRepo := repository.NewGORMCapabilityRepository(db)
 	eventPublisher := event.NewHTTPEventPublisher(cfg.EventServiceURL)
 
+	// Authorizer ใช้ร่วมกันทุก service — บังคับสิทธิ์ที่ชั้น application
+	authz := application.NewAuthorizer(petRepo, capabilityRepo)
+
 	// Use cases
-	petService := application.NewPetService(petRepo, eventPublisher)
-	caregiverService := application.NewCaregiverService(caregiverRepo)
-	litterService := application.NewLitterService(litterRepo, eventPublisher)
-	waterService := application.NewWaterService(waterRepo, eventPublisher)
+	petService := application.NewPetService(petRepo, eventPublisher, authz)
+	caregiverService := application.NewCaregiverService(caregiverRepo, permissionRepo, authz)
+	litterService := application.NewLitterService(litterRepo, eventPublisher, authz)
+	waterService := application.NewWaterService(waterRepo, eventPublisher, authz)
 	masterDataService := application.NewMasterDataService()
 
 	// Input adapters
@@ -57,15 +64,28 @@ func wire(db *gorm.DB, cfg config.Config) handlers {
 }
 
 // NewApp สร้าง fiber app ที่พร้อมรับ request
-func NewApp(db *gorm.DB, cfg config.Config, publicKey *rsa.PublicKey) *fiber.App {
+func NewApp(db *gorm.DB, cfg config.Config, auth middleware.AuthConfig) *fiber.App {
 	app := fiber.New(fiber.Config{
 		BodyLimit:    bodyLimit,
 		ErrorHandler: middleware.ErrorHandler,
 	})
 
+	// recover ต้องมาก่อนทุกอย่าง — เดิมไม่มีเลย panic ใน handler ทำให้
+	// middleware ที่เหลือไม่ทำงานต่อและ client ได้ connection ที่ตายไปเฉยๆ (S-10)
+	app.Use(recover.New())
 	app.Use(middleware.NewRequestID())
-	app.Use(middleware.NewAccessLog())
+	app.Use(middleware.NewAccessLog(middleware.LogConfig{LogBody: cfg.Log.Body}))
+	app.Use(limiter.New(limiter.Config{
+		Max:        300,
+		Expiration: time.Minute,
+		KeyGenerator: func(c *fiber.Ctx) string {
+			if uid, ok := c.Locals("userId").(string); ok && uid != "" {
+				return uid
+			}
+			return c.IP()
+		},
+	}))
 
-	registerRoutes(app, wire(db, cfg), publicKey)
+	registerRoutes(app, wire(db, cfg), auth)
 	return app
 }

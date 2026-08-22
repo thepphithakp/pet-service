@@ -116,7 +116,7 @@ jobs:
 
       # gate สำคัญที่สุดของเฟสนี้: schema ที่ Flyway สร้าง ต้องตรงกับ GORM model
       # เพราะไม่มี AutoMigrate คอยประสานให้อีกแล้ว
-      - name: Schema ตรงกับ GORM model
+      - name: Schema ตรงกับ GORM model + authorization e2e
         env:
           TEST_DATABASE_URL: postgres://vertex:vertex@localhost:5432/vertex_pet?sslmode=disable&search_path=pet
-        run: go test -count=1 -tags=integration ./internal/bootstrap/... -run TestSchema -v
+        run: go test -count=1 -tags=integration ./... -v

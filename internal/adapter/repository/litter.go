@@ -2,7 +2,6 @@ package repository
 
 import (
 	"context"
-	"errors"
 
 	"github.com/google/uuid"
 	"github.com/vertex/pet-service/internal/adapter/repository/model"
@@ -55,13 +54,17 @@ func (r *GORMLitterRepository) SaveBatch(ctx context.Context, logs []domain.Litt
 	return result, nil
 }
 
-func (r *GORMLitterRepository) Delete(ctx context.Context, logID uuid.UUID) error {
-	result := r.db.WithContext(ctx).Delete(&model.Litter{}, "id = ?", logID)
+// Delete ลบ log โดยยืนยันว่าอยู่ใต้สัตว์เลี้ยงตัวที่ระบุจริง
+//
+// เดิมไม่เช็ค pet_id ทำให้ยิง DELETE /pets/<ของตัวเอง>/litter-logs/<log ของคนอื่น> ได้
+func (r *GORMLitterRepository) Delete(ctx context.Context, petID, logID uuid.UUID) error {
+	result := r.db.WithContext(ctx).Delete(&model.Litter{}, "id = ? AND pet_id = ?", logID, petID)
 	if result.Error != nil {
 		return result.Error
 	}
 	if result.RowsAffected == 0 {
-		return errors.New("litter log not found")
+		// คืน sentinel แทน errors.New ดิบ เพื่อให้ map เป็น 404 ได้ (C-4)
+		return domain.ErrLitterLogNotFound
 	}
 	return nil
 }

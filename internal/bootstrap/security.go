@@ -3,11 +3,14 @@ package bootstrap
 import (
 	"crypto/rsa"
 	"fmt"
+	"log"
 	"os"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 
 	"github.com/vertex/pet-service/internal/config"
+	"github.com/vertex/pet-service/pkg/middleware"
 )
 
 // LoadPublicKey อ่าน RSA public key สำหรับ verify JWT
@@ -29,4 +32,31 @@ func LoadPublicKey(cfg config.JWTConfig) (*rsa.PublicKey, error) {
 		return nil, fmt.Errorf("parse RSA public key ไม่สำเร็จ: %w", err)
 	}
 	return key, nil
+}
+
+// NewAuthConfig ประกอบค่าตั้งต้นของ auth middleware
+func NewAuthConfig(cfg config.JWTConfig) (middleware.AuthConfig, error) {
+	key, err := LoadPublicKey(cfg)
+	if err != nil {
+		return middleware.AuthConfig{}, err
+	}
+
+	adminIDs := make(map[uuid.UUID]bool, len(cfg.AdminUserIDs))
+	for _, raw := range cfg.AdminUserIDs {
+		id, err := uuid.Parse(raw)
+		if err != nil {
+			return middleware.AuthConfig{}, fmt.Errorf("ADMIN_USER_IDS มี uuid ที่ไม่ถูกต้อง %q: %w", raw, err)
+		}
+		adminIDs[id] = true
+	}
+	if len(adminIDs) > 0 {
+		log.Printf("⚠️  ADMIN_USER_IDS ตั้งไว้ %d รายการ — เป็นสะพานชั่วคราวระหว่างรอ roles claim จาก auth-service ถอดออกเมื่อพร้อม", len(adminIDs))
+	}
+
+	return middleware.AuthConfig{
+		PublicKey:    key,
+		Issuer:       cfg.Issuer,
+		Audience:     cfg.Audience,
+		AdminUserIDs: adminIDs,
+	}, nil
 }

@@ -52,8 +52,18 @@ func FromDomain(err error) *AppError {
 		return NotFound("Caregiver", err)
 	case errors.Is(err, domain.ErrLitterLogNotFound):
 		return NotFound("Litter log", err)
+	case errors.Is(err, domain.ErrWaterLogNotFound):
+		return NotFound("Water log", err)
+	case errors.Is(err, domain.ErrForbidden):
+		return &AppError{Code: http.StatusForbidden, Message: "You do not have permission to perform this action", Cause: err}
+	case errors.Is(err, domain.ErrUnauthenticated):
+		return Unauthorized("Authentication required")
 	case errors.Is(err, domain.ErrCaregiverDuplicate):
 		return BadRequest("Caregiver already exists for this pet", err)
+	case errors.Is(err, domain.ErrValidation):
+		return BadRequest(err.Error(), err)
+	case errors.Is(err, domain.ErrInvalidPermission):
+		return BadRequest(err.Error(), err)
 	case errors.Is(err, domain.ErrInvalidID):
 		return BadRequest("Invalid ID format", err)
 	case errors.Is(err, gorm.ErrRecordNotFound):

@@ -15,6 +15,14 @@ type Config struct {
 	JWT JWTConfig
 
 	EventServiceURL string
+
+	Log LogConfig
+}
+
+type LogConfig struct {
+	Level string
+	// Body เปิดการ log request/response body — ห้ามเปิดบน production
+	Body bool
 }
 
 type DBConfig struct {
@@ -43,6 +51,16 @@ type JWTConfig struct {
 	// โดยไม่ต้อง rebuild image (S-6)
 	PublicKeyPEM  string
 	PublicKeyPath string
+
+	// Issuer / Audience ตรวจเมื่อไม่ว่างเท่านั้น
+	// ⚠️ เปิดได้หลัง auth-service ออก claim สองตัวนี้แล้วอย่างน้อย 72 ชม.
+	//    (เท่าอายุ token เดิม) ไม่งั้น token ที่ผู้ใช้ถืออยู่จะใช้ไม่ได้ทันที
+	Issuer   string
+	Audience string
+
+	// AdminUserIDs สะพานชั่วคราวระหว่างรอ roles claim จาก Phase 1A
+	// user id ในรายการนี้จะได้ SUPER_ADMIN — ถอดออกเมื่อ auth-service พร้อม
+	AdminUserIDs []string
 }
 
 // DSN คืน connection string สำหรับ gorm postgres driver
@@ -81,8 +99,15 @@ func Load() (Config, error) {
 		JWT: JWTConfig{
 			PublicKeyPEM:  os.Getenv("JWT_PUBLIC_KEY"),
 			PublicKeyPath: env("JWT_PUBLIC_KEY_PATH", "keys/public.pem"),
+			Issuer:        os.Getenv("JWT_ISSUER"),
+			Audience:      os.Getenv("JWT_AUDIENCE"),
+			AdminUserIDs:  splitList(os.Getenv("ADMIN_USER_IDS")),
 		},
 		EventServiceURL: env("EVENT_SERVICE_URL", "http://event-service.vertex.svc.cluster.local:4002"),
+		Log: LogConfig{
+			Level: env("LOG_LEVEL", "info"),
+			Body:  os.Getenv("LOG_BODY") == "true",
+		},
 	}
 	return cfg, cfg.Validate()
 }
@@ -105,6 +130,21 @@ func (c Config) Validate() error {
 		return fmt.Errorf("ไม่ได้ตั้งค่า environment ที่จำเป็น: %s", strings.Join(missing, ", "))
 	}
 	return nil
+}
+
+// splitList แยกค่าที่คั่นด้วย comma และตัดช่องว่าง
+func splitList(v string) []string {
+	if strings.TrimSpace(v) == "" {
+		return nil
+	}
+	parts := strings.Split(v, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 func env(key, fallback string) string {

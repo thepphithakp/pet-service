@@ -50,7 +50,9 @@ func petHandlerApp(uc *fakePetUC, locals map[string]any) interface {
 	Test(*http.Request, ...int) (*http.Response, error)
 } {
 	app := newTestApp(locals)
-	NewPetHandler(uc).RegisterRoutes(app.Group("/api/v1"))
+	h := NewPetHandler(uc)
+	h.RegisterRoutes(app.Group("/api/v1"))
+	h.RegisterAdminRoutes(app.Group("/api/v1/admin"))
 	return app
 }
 
@@ -81,7 +83,7 @@ func TestPetGetAll(t *testing.T) {
 		}
 	})
 
-	t.Run("userId ไม่ใช่ uuid → 401", func(t *testing.T) {
+	t.Run("userId ไม่ใช่ uuid → 401 (actor ไม่ถูกเซ็ต)", func(t *testing.T) {
 		res := do(t, petHandlerApp(&fakePetUC{}, map[string]any{"userId": "not-a-uuid"}), "GET", "/api/v1/pets", nil)
 		if res.StatusCode != 401 {
 			t.Fatalf("status = %d, ต้องการ 401", res.StatusCode)
@@ -155,14 +157,16 @@ func TestPetCreate(t *testing.T) {
 		}
 	})
 
-	// BUG S-3 (mass assignment): client ส่ง createdBy มาเองได้ เพราะ handler bind domain.Pet ตรงๆ
-	// test นี้ล็อกพฤติกรรม "ที่ผิด" ไว้ เพื่อให้ Phase 1.3 มาแก้แล้วเห็นชัดว่าเปลี่ยนอะไร
-	t.Run("known bug S-3: client กำหนด createdBy ได้", func(t *testing.T) {
+	// S-3 แก้แล้ว: createdBy ต้องมาจาก actor เท่านั้น
+	//
+	// หมายเหตุ: ตอนนี้ยังกันที่ชั้น service (PetService.Create เขียนทับ)
+	// Phase 1.3 จะเพิ่ม DTO ที่ไม่มีฟิลด์นี้เลย เพื่อกันตั้งแต่ชั้น handler
+	t.Run("S-3: client กำหนด createdBy เองไม่ได้", func(t *testing.T) {
 		uc := &fakePetUC{created: &domain.Pet{}}
 		app := petHandlerApp(uc, map[string]any{"userId": testUserID})
 		do(t, app, "POST", "/api/v1/pets", map[string]any{"name": "x", "createdBy": "hacker"})
-		if uc.createdArg.CreatedBy == nil || *uc.createdArg.CreatedBy != "hacker" {
-			t.Skip("S-3 ถูกแก้แล้ว — อัปเดต test นี้ให้ยืนยันว่า createdBy ต้องไม่มาจาก body")
+		if uc.createdArg.CreatedBy != nil && *uc.createdArg.CreatedBy == "hacker" {
+			t.Fatal("createdBy ต้องไม่มาจาก request body")
 		}
 	})
 }
@@ -179,14 +183,27 @@ func TestPetDelete(t *testing.T) {
 	}
 }
 
-// BUG S-2: /admin/pets ไม่เช็ค role — token ธรรมดาก็ดึงข้อมูลทั้งระบบได้
-func TestPetAdminGetAll_KnownVulnerability(t *testing.T) {
-	uc := &fakePetUC{all: []domain.Pet{{Name: "ของคนอื่น"}}}
+// S-2 แก้แล้ว: การตรวจสิทธิ์อยู่ที่ชั้น service — handler แค่ map error เป็น status
+//
+// การบังคับจริงมี test ครอบที่ application/pet_service_test.go
+// (TestPetService_GetAll_RequiresCapability) ตรงนี้ยืนยันว่า route ยังอยู่
+// และ error จาก service ถูกแปลงเป็น 403 ถูกต้อง
+func TestPetAdminGetAll_ForbiddenMapsTo403(t *testing.T) {
+	uc := &fakePetUC{err: domain.ErrForbidden}
 	app := petHandlerApp(uc, map[string]any{"userId": testUserID})
 	res := do(t, app, "GET", "/api/v1/admin/pets", nil)
-	if res.StatusCode == 200 {
-		t.Log("ยืนยันช่องโหว่ S-2: user ธรรมดาเข้า /admin/pets ได้ — Phase 1.2 ต้องทำให้เป็น 403")
-		return
+	if res.StatusCode != 403 {
+		t.Fatalf("status = %d, ต้องการ 403", res.StatusCode)
 	}
-	t.Log("S-2 ถูกแก้แล้ว — เปลี่ยน test นี้เป็นการยืนยัน 403")
+}
+
+// ไม่มีสิทธิ์กับ resource ที่ไม่ใช่ของตัวเอง → 404 ไม่ใช่ 403
+// เพื่อไม่ให้ client แยกออกว่า UUID ไหนมีอยู่จริง
+func TestPetGetOne_NoAccessLooksLikeNotFound(t *testing.T) {
+	uc := &fakePetUC{err: domain.ErrPetNotFound}
+	app := petHandlerApp(uc, map[string]any{"userId": testUserID})
+	res := do(t, app, "GET", "/api/v1/pets/"+uuid.NewString(), nil)
+	if res.StatusCode != 404 {
+		t.Fatalf("status = %d, ต้องการ 404", res.StatusCode)
+	}
 }

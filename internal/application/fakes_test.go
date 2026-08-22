@@ -19,6 +19,58 @@ type fakePetRepo struct {
 	updated  *domain.Pet
 	saveErr  error
 	deleteID uuid.UUID
+
+	access    domain.PetAccess
+	accessErr error
+}
+
+func (f *fakePetRepo) FindAccess(context.Context, uuid.UUID, uuid.UUID) (domain.PetAccess, error) {
+	return f.access, f.accessErr
+}
+
+// fakeCaps จำลอง role → capability
+type fakeCaps struct {
+	table map[string][]string
+	err   error
+}
+
+func (f *fakeCaps) HasAny(_ context.Context, roles []string, caps ...string) (bool, error) {
+	if f.err != nil {
+		return false, f.err
+	}
+	for _, r := range roles {
+		for _, have := range f.table[r] {
+			for _, want := range caps {
+				if have == want {
+					return true, nil
+				}
+			}
+		}
+	}
+	return false, nil
+}
+
+// ctxAs สร้าง context ที่มี actor พร้อม role ตามต้องการ
+func ctxAs(userID uuid.UUID, roles ...string) context.Context {
+	if len(roles) == 0 {
+		roles = []string{domain.RoleUser}
+	}
+	return domain.WithActor(context.Background(), domain.Actor{
+		UserID:   userID,
+		Username: "tester",
+		Roles:    roles,
+	})
+}
+
+// adminCaps คือ capability ของ SUPER_ADMIN ตามที่ R__0005 seed ไว้
+func adminCaps() *fakeCaps {
+	return &fakeCaps{table: map[string][]string{
+		domain.RoleSuperAdmin: {
+			domain.CapPetReadAny, domain.CapPetWriteAny, domain.CapPetDeleteAny,
+			domain.CapCaregiverManageAny, domain.CapLogReadAny, domain.CapLogWriteAny,
+			domain.CapMasterDataWrite,
+		},
+	}}
 }
 
 func (f *fakePetRepo) FindAllForUser(context.Context, uuid.UUID) ([]domain.Pet, error) {

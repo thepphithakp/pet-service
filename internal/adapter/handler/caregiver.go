@@ -3,7 +3,7 @@ package handler
 import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
-	"github.com/vertex/pet-service/internal/domain"
+	"github.com/vertex/pet-service/internal/adapter/handler/dto"
 	"github.com/vertex/pet-service/internal/port"
 	"github.com/vertex/pet-service/pkg/apperror"
 )
@@ -22,7 +22,7 @@ func (h *CaregiverHandler) GetAll(c *fiber.Ctx) error {
 	if err != nil {
 		return apperror.BadRequest("Invalid pet ID", err)
 	}
-	caregivers, err := h.useCase.GetForPet(c.Context(), petID)
+	caregivers, err := h.useCase.GetForPet(c.UserContext(), petID)
 	if err != nil {
 		return apperror.FromDomain(err)
 	}
@@ -35,9 +35,7 @@ func (h *CaregiverHandler) Add(c *fiber.Ctx) error {
 		return apperror.BadRequest("Invalid pet ID", err)
 	}
 
-	var body struct {
-		UserID string `json:"userId"`
-	}
+	var body dto.AddCaregiverRequest
 	if err := c.BodyParser(&body); err != nil {
 		return apperror.BadRequest("Invalid request body", err)
 	}
@@ -47,7 +45,7 @@ func (h *CaregiverHandler) Add(c *fiber.Ctx) error {
 		return apperror.BadRequest("Invalid user ID", err)
 	}
 
-	caregiver, err := h.useCase.Add(c.Context(), petID, userID)
+	caregiver, err := h.useCase.Add(c.UserContext(), petID, userID)
 	if err != nil {
 		return apperror.FromDomain(err)
 	}
@@ -60,14 +58,13 @@ func (h *CaregiverHandler) UpdatePermissions(c *fiber.Ctx) error {
 		return apperror.BadRequest("Invalid caregiver ID", err)
 	}
 
-	var body struct {
-		Permissions []domain.PetPermission `json:"permissions"`
-	}
+	// S-4: รับแค่ ID ไม่รับ object เต็มก้อน — ไม่งั้น client แก้ master data ได้
+	var body dto.UpdatePermissionsRequest
 	if err := c.BodyParser(&body); err != nil {
 		return apperror.BadRequest("Invalid request body", err)
 	}
 
-	updated, err := h.useCase.UpdatePermissions(c.Context(), caregiverID, body.Permissions)
+	updated, err := h.useCase.UpdatePermissions(c.UserContext(), caregiverID, body.IDs())
 	if err != nil {
 		return apperror.FromDomain(err)
 	}
@@ -79,7 +76,7 @@ func (h *CaregiverHandler) Remove(c *fiber.Ctx) error {
 	if err != nil {
 		return apperror.BadRequest("Invalid caregiver ID", err)
 	}
-	if err := h.useCase.Remove(c.Context(), caregiverID); err != nil {
+	if err := h.useCase.Remove(c.UserContext(), caregiverID); err != nil {
 		return apperror.FromDomain(err)
 	}
 	return c.SendStatus(fiber.StatusNoContent)

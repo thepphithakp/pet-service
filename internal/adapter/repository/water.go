@@ -39,10 +39,17 @@ func (r *GORMWaterRepository) FindByPetID(ctx context.Context, petID uuid.UUID) 
 	return result, nil
 }
 
-func (r *GORMWaterRepository) Delete(ctx context.Context, logID uuid.UUID) error {
-	result := r.db.WithContext(ctx).Delete(&model.Water{}, "id = ?", logID)
+// Delete ลบ log โดยยืนยันว่าอยู่ใต้สัตว์เลี้ยงตัวที่ระบุจริง
+//
+// เดิมไม่เช็ค RowsAffected เลย ทำให้ลบของที่ไม่มีอยู่ก็คืน 204 (C-9)
+// ตอนนี้ทำเหมือน litter แล้ว
+func (r *GORMWaterRepository) Delete(ctx context.Context, petID, logID uuid.UUID) error {
+	result := r.db.WithContext(ctx).Delete(&model.Water{}, "id = ? AND pet_id = ?", logID, petID)
 	if result.Error != nil {
 		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return domain.ErrWaterLogNotFound
 	}
 	return nil
 }

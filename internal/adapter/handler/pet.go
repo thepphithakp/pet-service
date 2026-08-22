@@ -3,6 +3,7 @@ package handler
 import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
+	"github.com/vertex/pet-service/internal/adapter/handler/dto"
 	"github.com/vertex/pet-service/internal/domain"
 	"github.com/vertex/pet-service/internal/port"
 	"github.com/vertex/pet-service/pkg/apperror"
@@ -17,34 +18,13 @@ func NewPetHandler(uc port.PetUseCase) *PetHandler {
 	return &PetHandler{useCase: uc}
 }
 
-// petRequest is the HTTP request/response DTO for pets.
-type petRequest struct {
-	Name             string   `json:"name"`
-	Species          string   `json:"species"`
-	Breed            string   `json:"breed"`
-	ColorCode        string   `json:"colorCode"`
-	BirthDate        string   `json:"birthDate"`
-	Gender           string   `json:"gender"`
-	AvatarData       []byte   `json:"avatarData,omitempty"`
-	CurrentWeight    *float64 `json:"currentWeight"`
-	MicrochipId      *string  `json:"microchipId"`
-	IsSpayedNeutered bool     `json:"isSpayedNeutered"`
-	BloodType        *string  `json:"bloodType"`
-	Allergies        *string  `json:"allergies"`
-	Personality      *string  `json:"personality"`
-}
-
 func (h *PetHandler) GetAll(c *fiber.Ctx) error {
-	userIDStr, ok := c.Locals("userId").(string)
-	if !ok || userIDStr == "" {
+	actor, ok := domain.ActorFromContext(c.UserContext())
+	if !ok {
 		return apperror.Unauthorized("Missing user ID in token")
 	}
-	userID, err := uuid.Parse(userIDStr)
-	if err != nil {
-		return apperror.Unauthorized("Invalid user ID in token")
-	}
 
-	pets, err := h.useCase.GetAllForUser(c.Context(), userID)
+	pets, err := h.useCase.GetAllForUser(c.UserContext(), actor.UserID)
 	if err != nil {
 		return apperror.FromDomain(err)
 	}
@@ -52,7 +32,7 @@ func (h *PetHandler) GetAll(c *fiber.Ctx) error {
 }
 
 func (h *PetHandler) AdminGetAll(c *fiber.Ctx) error {
-	pets, err := h.useCase.GetAll(c.Context())
+	pets, err := h.useCase.GetAll(c.UserContext())
 	if err != nil {
 		return apperror.FromDomain(err)
 	}
@@ -64,7 +44,7 @@ func (h *PetHandler) GetOne(c *fiber.Ctx) error {
 	if err != nil {
 		return apperror.BadRequest("Invalid pet ID", err)
 	}
-	pet, err := h.useCase.GetByID(c.Context(), id)
+	pet, err := h.useCase.GetByID(c.UserContext(), id)
 	if err != nil {
 		return apperror.FromDomain(err)
 	}
@@ -72,23 +52,26 @@ func (h *PetHandler) GetOne(c *fiber.Ctx) error {
 }
 
 func (h *PetHandler) Create(c *fiber.Ctx) error {
-	userIDStr := c.Locals("userId").(string)
-	ownerID, err := uuid.Parse(userIDStr)
-	if err != nil {
-		return apperror.Unauthorized("Invalid user ID in token")
+	// C-1: เดิมเป็น type assertion แบบไม่มี ok → panic ได้ถ้า middleware ไม่ได้เซ็ต
+	actor, ok := domain.ActorFromContext(c.UserContext())
+	if !ok {
+		return apperror.Unauthorized("Missing user ID in token")
 	}
 
-	userName, _ := c.Locals("userName").(string)
-
-	var pet domain.Pet
-	if err := c.BodyParser(&pet); err != nil {
+	var req dto.CreatePetRequest
+	if err := c.BodyParser(&req); err != nil {
 		return apperror.BadRequest("Invalid request body", err)
 	}
-	pet.OwnerUsername = userName
+	if err := req.Validate(); err != nil {
+		return apperror.FromDomain(err)
+	}
 
-	created, err := h.useCase.Create(c.Context(), &pet, ownerID)
+	pet := req.ToDomain()
+	pet.OwnerUsername = actor.Username
+
+	created, err := h.useCase.Create(c.UserContext(), &pet, actor.UserID)
 	if err != nil {
-		return apperror.Internal("Failed to create pet", err)
+		return apperror.FromDomain(err)
 	}
 	return c.Status(fiber.StatusCreated).JSON(created)
 }
@@ -99,12 +82,16 @@ func (h *PetHandler) Update(c *fiber.Ctx) error {
 		return apperror.BadRequest("Invalid pet ID", err)
 	}
 
-	var pet domain.Pet
-	if err := c.BodyParser(&pet); err != nil {
+	var req dto.UpdatePetRequest
+	if err := c.BodyParser(&req); err != nil {
 		return apperror.BadRequest("Invalid request body", err)
 	}
+	if err := req.Validate(); err != nil {
+		return apperror.FromDomain(err)
+	}
 
-	updated, err := h.useCase.Update(c.Context(), id, &pet)
+	pet := req.ToDomain()
+	updated, err := h.useCase.Update(c.UserContext(), id, &pet)
 	if err != nil {
 		return apperror.FromDomain(err)
 	}
@@ -116,18 +103,25 @@ func (h *PetHandler) Delete(c *fiber.Ctx) error {
 	if err != nil {
 		return apperror.BadRequest("Invalid pet ID", err)
 	}
-	if err := h.useCase.Delete(c.Context(), id); err != nil {
+	if err := h.useCase.Delete(c.UserContext(), id); err != nil {
 		return apperror.FromDomain(err)
 	}
 	return c.SendStatus(fiber.StatusNoContent)
 }
 
-// RegisterRoutes wires this handler's routes onto the given router group.
+// RegisterRoutes ลงทะเบียน route ของผู้ใช้ทั่วไป
 func (h *PetHandler) RegisterRoutes(router fiber.Router) {
 	router.Get("/pets", h.GetAll)
-	router.Get("/admin/pets", h.AdminGetAll)
 	router.Get("/pets/:id", h.GetOne)
 	router.Post("/pets", h.Create)
 	router.Put("/pets/:id", h.Update)
 	router.Delete("/pets/:id", h.Delete)
+}
+
+// RegisterAdminRoutes ลงทะเบียนแยกจาก route ปกติ
+//
+// การตรวจสิทธิ์จริงอยู่ที่ชั้น service (PetService.GetAll) ไม่ใช่ที่ route group
+// เพื่อไม่ให้ข้ามได้ถ้ามี caller อื่นเรียก use case ตรงๆ
+func (h *PetHandler) RegisterAdminRoutes(router fiber.Router) {
+	router.Get("/pets", h.AdminGetAll)
 }

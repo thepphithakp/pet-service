@@ -12,20 +12,28 @@ import (
 type LitterService struct {
 	repo           port.LitterRepository
 	eventPublisher port.EventPublisher
+	authz          *Authorizer
 }
 
-func NewLitterService(repo port.LitterRepository, eventPublisher port.EventPublisher) *LitterService {
+func NewLitterService(repo port.LitterRepository, eventPublisher port.EventPublisher, authz *Authorizer) *LitterService {
 	return &LitterService{
 		repo:           repo,
 		eventPublisher: eventPublisher,
+		authz:          authz,
 	}
 }
 
 func (s *LitterService) GetForPet(ctx context.Context, petID uuid.UUID) ([]domain.LitterLog, error) {
+	if err := s.authz.Authorize(ctx, petID, ReqLogRead); err != nil {
+		return nil, err
+	}
 	return s.repo.FindByPetID(ctx, petID)
 }
 
 func (s *LitterService) Create(ctx context.Context, log *domain.LitterLog) (*domain.LitterLog, error) {
+	if err := s.authz.Authorize(ctx, log.PetID, ReqLitterWrite); err != nil {
+		return nil, err
+	}
 	log.ID = uuid.New()
 
 	created, err := s.repo.Save(ctx, log)
@@ -55,6 +63,21 @@ func (s *LitterService) Create(ctx context.Context, log *domain.LitterLog) (*dom
 }
 
 func (s *LitterService) CreateBatch(ctx context.Context, logs []domain.LitterLog) ([]domain.LitterLog, error) {
+	// C-7: gorm.Create กับ slice ว่างคืน ErrEmptySlice → 500 ปิดไว้ตั้งแต่ต้นทาง
+	if len(logs) == 0 {
+		return []domain.LitterLog{}, nil
+	}
+	// ทุกแถวต้องเป็นของสัตว์เลี้ยงตัวเดียวกัน (handler เซ็ตจาก path ให้แล้ว)
+	// ตรวจอีกชั้นเผื่อมี caller อื่นเรียกตรงๆ
+	petID := logs[0].PetID
+	for i := range logs {
+		if logs[i].PetID != petID {
+			return nil, domain.ErrForbidden
+		}
+	}
+	if err := s.authz.Authorize(ctx, petID, ReqLitterWrite); err != nil {
+		return nil, err
+	}
 	for i := range logs {
 		if logs[i].ID == uuid.Nil {
 			logs[i].ID = uuid.New()
@@ -89,24 +112,9 @@ func (s *LitterService) CreateBatch(ctx context.Context, logs []domain.LitterLog
 	return createdLogs, err
 }
 
-func (s *LitterService) Delete(ctx context.Context, logID uuid.UUID) error {
-	return s.repo.Delete(ctx, logID)
-}
-
-// MasterDataService implements port.MasterDataUseCase.
-type MasterDataService struct{}
-
-func NewMasterDataService() *MasterDataService { return &MasterDataService{} }
-
-func (s *MasterDataService) GetCatBreeds(_ context.Context) []string {
-	return []string{
-		"Scottish Fold (หูพับ)", "Scottish Straight (หูตั้ง)", "British Shorthair",
-		"Persian", "Maine Coon", "Siamese (วิเชียรมาศ)", "Khao Manee (ขาวมณี)",
-		"Sphynx", "Bengal", "Ragdoll", "American Shorthair",
-		"Exotic Shorthair", "Munchkin (ขาสั้น)", "Mixed / Other (พันธุ์ผสม/อื่นๆ)",
+func (s *LitterService) Delete(ctx context.Context, petID, logID uuid.UUID) error {
+	if err := s.authz.Authorize(ctx, petID, ReqLitterWrite); err != nil {
+		return err
 	}
-}
-
-func (s *MasterDataService) GetBloodTypes(_ context.Context) []string {
-	return []string{"Unknown", "A", "B", "AB"}
+	return s.repo.Delete(ctx, petID, logID)
 }

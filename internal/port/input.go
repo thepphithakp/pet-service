@@ -22,7 +22,7 @@ type PetUseCase interface {
 type CaregiverUseCase interface {
 	GetForPet(ctx context.Context, petID uuid.UUID) ([]domain.PetCaregiver, error)
 	Add(ctx context.Context, petID uuid.UUID, userID uuid.UUID) (*domain.PetCaregiver, error)
-	UpdatePermissions(ctx context.Context, caregiverID uuid.UUID, permissions []domain.PetPermission) (*domain.PetCaregiver, error)
+	UpdatePermissions(ctx context.Context, caregiverID uuid.UUID, permissionIDs []string) (*domain.PetCaregiver, error)
 	Remove(ctx context.Context, caregiverID uuid.UUID) error
 }
 
@@ -31,7 +31,7 @@ type LitterUseCase interface {
 	GetForPet(ctx context.Context, petID uuid.UUID) ([]domain.LitterLog, error)
 	Create(ctx context.Context, log *domain.LitterLog) (*domain.LitterLog, error)
 	CreateBatch(ctx context.Context, logs []domain.LitterLog) ([]domain.LitterLog, error)
-	Delete(ctx context.Context, logID uuid.UUID) error
+	Delete(ctx context.Context, petID, logID uuid.UUID) error
 }
 
 // MasterDataUseCase is the driving port for master data queries.

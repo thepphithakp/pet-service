@@ -1,7 +1,7 @@
 package application
 
 import (
-	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -10,14 +10,20 @@ import (
 	"github.com/vertex/pet-service/internal/domain"
 )
 
+// newPetSvc ประกอบ service พร้อม authorizer ที่ให้สิทธิ์ระดับที่ต้องการ
+func newPetSvc(repo *fakePetRepo, pub *fakePublisher, level domain.AccessLevel) *PetService {
+	repo.access = domain.PetAccess{Level: level}
+	return NewPetService(repo, pub, NewAuthorizer(repo, adminCaps()))
+}
+
 func TestPetService_Create(t *testing.T) {
 	repo := &fakePetRepo{}
 	pub := &fakePublisher{}
-	svc := NewPetService(repo, pub)
+	svc := newPetSvc(repo, pub, domain.AccessOwner)
 
 	owner := uuid.New()
 	in := &domain.Pet{Name: "มะลิ", Species: "Cat"}
-	out, err := svc.Create(context.Background(), in, owner)
+	out, err := svc.Create(ctxAs(owner), in, owner)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,7 +50,8 @@ func TestPetService_Create(t *testing.T) {
 func TestPetService_Create_NoEventOnSaveFailure(t *testing.T) {
 	repo := &fakePetRepo{saveErr: errBoom}
 	pub := &fakePublisher{}
-	if _, err := NewPetService(repo, pub).Create(context.Background(), &domain.Pet{}, uuid.New()); err == nil {
+	svc := newPetSvc(repo, pub, domain.AccessOwner)
+	if _, err := svc.Create(ctxAs(uuid.New()), &domain.Pet{}, uuid.New()); err == nil {
 		t.Fatal("ต้องคืน error")
 	}
 	if len(pub.events) != 0 {
@@ -59,10 +66,10 @@ func TestPetService_Update_PatchSemantics(t *testing.T) {
 		BirthDate: time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC),
 	}
 	repo := &fakePetRepo{byID: existing}
-	svc := NewPetService(repo, &fakePublisher{})
+	svc := newPetSvc(repo, &fakePublisher{}, domain.AccessOwner)
 
 	// ฟิลด์ที่เป็นค่าว่าง = "ไม่แก้"
-	out, err := svc.Update(context.Background(), existing.ID, &domain.Pet{Name: "ใหม่"})
+	out, err := svc.Update(ctxAs(uuid.New()), existing.ID, &domain.Pet{Name: "ใหม่"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,9 +88,9 @@ func TestPetService_Update_PatchSemantics(t *testing.T) {
 func TestPetService_Update_CannotClearNullable_KnownBug(t *testing.T) {
 	existing := &domain.Pet{ID: uuid.New(), Name: "x", MicrochipId: strp("CHIP-1")}
 	repo := &fakePetRepo{byID: existing}
-	svc := NewPetService(repo, &fakePublisher{})
+	svc := newPetSvc(repo, &fakePublisher{}, domain.AccessOwner)
 
-	out, _ := svc.Update(context.Background(), existing.ID, &domain.Pet{MicrochipId: nil})
+	out, _ := svc.Update(ctxAs(uuid.New()), existing.ID, &domain.Pet{MicrochipId: nil})
 	if out.MicrochipId != nil {
 		t.Log("ยืนยัน bug C-3: ล้าง microchipId เป็น null ไม่ได้ — Phase 4.4 ต้องเพิ่ม PATCH ที่แยก 'ไม่ส่ง' กับ 'ส่ง null'")
 		return
@@ -91,30 +98,72 @@ func TestPetService_Update_CannotClearNullable_KnownBug(t *testing.T) {
 	t.Log("C-3 ถูกแก้แล้ว")
 }
 
-// BUG C-2: ActorID ถูกยัดด้วย OwnerUsername (username ของเจ้าของ) ไม่ใช่ user id ของคนที่กดแก้
-func TestPetService_Update_ActorID_KnownBug(t *testing.T) {
+// C-2 แก้แล้ว: ActorID ต้องเป็น user id ของ "คนที่กดแก้" ไม่ใช่ username ของเจ้าของ
+func TestPetService_Update_ActorIsTheCaller(t *testing.T) {
 	existing := &domain.Pet{ID: uuid.New(), Name: "x", OwnerUsername: "เจ้าของ"}
 	pub := &fakePublisher{}
-	svc := NewPetService(&fakePetRepo{byID: existing}, pub)
+	repo := &fakePetRepo{byID: existing}
+	svc := newPetSvc(repo, pub, domain.AccessOwner)
 
-	if _, err := svc.Update(context.Background(), existing.ID, &domain.Pet{Name: "y"}); err != nil {
+	caller := uuid.New()
+	if _, err := svc.Update(ctxAs(caller), existing.ID, &domain.Pet{Name: "y"}); err != nil {
 		t.Fatal(err)
 	}
 	if len(pub.events) != 1 {
 		t.Fatalf("ต้อง publish 1 event, ได้ %d", len(pub.events))
 	}
-	if pub.events[0].ActorID == "เจ้าของ" {
-		t.Log("ยืนยัน bug C-2: ActorID ถูกใส่ด้วย username ของเจ้าของ ไม่ใช่ id ของผู้กระทำ — Phase 4.3 ต้องส่ง Actor ลงมาถึง service")
-		return
+	e := pub.events[0]
+	if e.ActorID != caller.String() {
+		t.Fatalf("ActorID = %q ต้องเป็น user id ของผู้กระทำ (%s)", e.ActorID, caller)
 	}
-	t.Log("C-2 ถูกแก้แล้ว")
+	if e.ActorUsername != "tester" {
+		t.Fatalf("ActorUsername = %q ต้องมาจาก actor", e.ActorUsername)
+	}
+	// UpdatedBy ต้องถูกเซ็ตจาก actor ไม่ใช่จาก request body
+	if repo.updated.UpdatedBy == nil || *repo.updated.UpdatedBy != caller.String() {
+		t.Fatal("UpdatedBy ต้องมาจาก actor")
+	}
+}
+
+// IDOR: user ที่ไม่เกี่ยวข้องต้องเข้าถึงไม่ได้เลย และต้องแยกไม่ออกจาก "ไม่มีอยู่จริง"
+func TestPetService_IDOR_Blocked(t *testing.T) {
+	existing := &domain.Pet{ID: uuid.New(), Name: "ของคนอื่น"}
+	repo := &fakePetRepo{byID: existing}
+	svc := newPetSvc(repo, &fakePublisher{}, domain.AccessNone)
+	stranger := ctxAs(uuid.New())
+
+	if _, err := svc.GetByID(stranger, existing.ID); !errors.Is(err, domain.ErrPetNotFound) {
+		t.Fatalf("อ่าน: err = %v ต้องการ ErrPetNotFound", err)
+	}
+	if _, err := svc.Update(stranger, existing.ID, &domain.Pet{Name: "แก้"}); !errors.Is(err, domain.ErrPetNotFound) {
+		t.Fatalf("แก้: err = %v ต้องการ ErrPetNotFound", err)
+	}
+	if err := svc.Delete(stranger, existing.ID); !errors.Is(err, domain.ErrPetNotFound) {
+		t.Fatalf("ลบ: err = %v ต้องการ ErrPetNotFound", err)
+	}
+	if repo.deleteID != uuid.Nil {
+		t.Fatal("ห้ามเรียก repo.Delete เลยเมื่อไม่มีสิทธิ์")
+	}
+}
+
+// S-2 แก้แล้ว: /admin/pets ต้องการ capability
+func TestPetService_GetAll_RequiresCapability(t *testing.T) {
+	repo := &fakePetRepo{}
+	svc := newPetSvc(repo, &fakePublisher{}, domain.AccessNone)
+
+	if _, err := svc.GetAll(ctxAs(uuid.New(), domain.RoleUser)); !errors.Is(err, domain.ErrForbidden) {
+		t.Fatalf("user ธรรมดา: err = %v ต้องการ ErrForbidden", err)
+	}
+	if _, err := svc.GetAll(ctxAs(uuid.New(), domain.RoleSuperAdmin)); err != nil {
+		t.Fatalf("SUPER_ADMIN ต้องผ่าน: %v", err)
+	}
 }
 
 func TestPetService_Delete(t *testing.T) {
 	existing := &domain.Pet{ID: uuid.New(), Name: "มะลิ"}
 	pub := &fakePublisher{}
 	repo := &fakePetRepo{byID: existing}
-	if err := NewPetService(repo, pub).Delete(context.Background(), existing.ID); err != nil {
+	if err := newPetSvc(repo, pub, domain.AccessOwner).Delete(ctxAs(uuid.New()), existing.ID); err != nil {
 		t.Fatal(err)
 	}
 	if repo.deleteID != existing.ID {
@@ -128,7 +177,7 @@ func TestPetService_Delete(t *testing.T) {
 func TestPetService_Delete_NotFound(t *testing.T) {
 	repo := &fakePetRepo{findErr: domain.ErrPetNotFound}
 	pub := &fakePublisher{}
-	err := NewPetService(repo, pub).Delete(context.Background(), uuid.New())
+	err := newPetSvc(repo, pub, domain.AccessOwner).Delete(ctxAs(uuid.New()), uuid.New())
 	if err != domain.ErrPetNotFound {
 		t.Fatalf("err = %v ต้องเป็น ErrPetNotFound", err)
 	}
@@ -140,7 +189,7 @@ func TestPetService_Delete_NotFound(t *testing.T) {
 // ล็อกค่า master data ปัจจุบันไว้เป็น golden — Phase 3 ต้องคืนค่าเดิมทุกตัวอักษร
 func TestMasterDataService_GoldenValues(t *testing.T) {
 	svc := NewMasterDataService()
-	breeds := svc.GetCatBreeds(context.Background())
+	breeds := svc.GetCatBreeds(t.Context())
 	if len(breeds) != 14 {
 		t.Fatalf("จำนวนสายพันธุ์ = %d ต้องการ 14", len(breeds))
 	}
@@ -150,7 +199,7 @@ func TestMasterDataService_GoldenValues(t *testing.T) {
 	if breeds[13] != "Mixed / Other (พันธุ์ผสม/อื่นๆ)" {
 		t.Fatalf("breeds[13] = %q", breeds[13])
 	}
-	blood := svc.GetBloodTypes(context.Background())
+	blood := svc.GetBloodTypes(t.Context())
 	want := []string{"Unknown", "A", "B", "AB"}
 	if len(blood) != len(want) {
 		t.Fatalf("blood types = %v", blood)

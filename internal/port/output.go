@@ -10,6 +10,12 @@ import (
 // PetRepository is the driven port (output port) for pet persistence.
 // Application services depend on this interface, NOT on GORM directly.
 type PetRepository interface {
+	// FindAccess ตอบว่า actor คนนี้เกี่ยวข้องกับสัตว์เลี้ยงตัวนี้อย่างไร ด้วย query เดียว
+	//
+	// คืน AccessNone ทั้งกรณี "ไม่มีสิทธิ์" และ "ไม่มีสัตว์เลี้ยงตัวนี้อยู่จริง"
+	// โดยตั้งใจ — ผู้เรียกจะได้ตอบ 404 เหมือนกันทั้งสองกรณี ไม่ให้ไล่เดา UUID ได้
+	FindAccess(ctx context.Context, petID, userID uuid.UUID) (domain.PetAccess, error)
+
 	FindAllForUser(ctx context.Context, userID uuid.UUID) ([]domain.Pet, error)
 	FindAll(ctx context.Context) ([]domain.Pet, error)
 	FindByID(ctx context.Context, id uuid.UUID) (*domain.Pet, error)
@@ -22,10 +28,10 @@ type PetRepository interface {
 type CaregiverRepository interface {
 	FindByPetID(ctx context.Context, petID uuid.UUID) ([]domain.PetCaregiver, error)
 	FindByID(ctx context.Context, id uuid.UUID) (*domain.PetCaregiver, error)
-	FindDeletedByPetAndUser(ctx context.Context, petID, userID uuid.UUID) (*domain.PetCaregiver, error)
 	Save(ctx context.Context, caregiver *domain.PetCaregiver) (*domain.PetCaregiver, error)
-	Restore(ctx context.Context, id uuid.UUID) (*domain.PetCaregiver, error)
-	UpdatePermissions(ctx context.Context, caregiverID uuid.UUID, permissions []domain.PetPermission) (*domain.PetCaregiver, error)
+	// SetPermissions เขียนตาราง join ตรงๆ ด้วย permission ID ที่ validate แล้ว
+	// ไม่ใช้ GORM Association.Replace ซึ่ง upsert ตาราง master ให้ด้วย (S-4)
+	SetPermissions(ctx context.Context, caregiverID uuid.UUID, permissionIDs []string) (*domain.PetCaregiver, error)
 	Delete(ctx context.Context, id uuid.UUID) error
 }
 
@@ -34,7 +40,15 @@ type LitterRepository interface {
 	FindByPetID(ctx context.Context, petID uuid.UUID) ([]domain.LitterLog, error)
 	Save(ctx context.Context, log *domain.LitterLog) (*domain.LitterLog, error)
 	SaveBatch(ctx context.Context, logs []domain.LitterLog) ([]domain.LitterLog, error)
-	Delete(ctx context.Context, logID uuid.UUID) error
+	// Delete รับ petID ด้วยเพื่อยืนยันว่า log อยู่ใต้สัตว์เลี้ยงตัวนั้นจริง
+	// เดิมรับแค่ logID ทำให้ลบ log ของสัตว์เลี้ยงตัวอื่นผ่าน URL ของตัวเองได้
+	Delete(ctx context.Context, petID, logID uuid.UUID) error
+}
+
+// CapabilityRepository อ่าน mapping role → capability ของ pet-service
+type CapabilityRepository interface {
+	// HasAny คืน true ถ้า role ใดใน roles มี capability ใดใน capabilities
+	HasAny(ctx context.Context, roles []string, capabilities ...string) (bool, error)
 }
 
 // PermissionRepository อ่าน master data ของสิทธิ์ caregiver

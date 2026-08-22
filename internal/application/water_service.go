@@ -11,13 +11,17 @@ import (
 type WaterService struct {
 	repo           port.WaterRepository
 	eventPublisher port.EventPublisher
+	authz          *Authorizer
 }
 
-func NewWaterService(repo port.WaterRepository, eventPublisher port.EventPublisher) *WaterService {
-	return &WaterService{repo: repo, eventPublisher: eventPublisher}
+func NewWaterService(repo port.WaterRepository, eventPublisher port.EventPublisher, authz *Authorizer) *WaterService {
+	return &WaterService{repo: repo, eventPublisher: eventPublisher, authz: authz}
 }
 
 func (s *WaterService) Create(ctx context.Context, log *domain.WaterLog) (*domain.WaterLog, error) {
+	if err := s.authz.Authorize(ctx, log.PetID, ReqWaterWrite); err != nil {
+		return nil, err
+	}
 	if log.ID == uuid.Nil {
 		log.ID = uuid.New()
 	}
@@ -47,9 +51,15 @@ func (s *WaterService) Create(ctx context.Context, log *domain.WaterLog) (*domai
 }
 
 func (s *WaterService) GetByPetID(ctx context.Context, petID uuid.UUID) ([]domain.WaterLog, error) {
+	if err := s.authz.Authorize(ctx, petID, ReqLogRead); err != nil {
+		return nil, err
+	}
 	return s.repo.FindByPetID(ctx, petID)
 }
 
-func (s *WaterService) Delete(ctx context.Context, logID uuid.UUID) error {
-	return s.repo.Delete(ctx, logID)
+func (s *WaterService) Delete(ctx context.Context, petID, logID uuid.UUID) error {
+	if err := s.authz.Authorize(ctx, petID, ReqWaterWrite); err != nil {
+		return err
+	}
+	return s.repo.Delete(ctx, petID, logID)
 }

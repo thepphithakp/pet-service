@@ -7,6 +7,23 @@ var (
 	ErrPetNotFound        = errors.New("pet not found")
 	ErrCaregiverNotFound  = errors.New("caregiver not found")
 	ErrLitterLogNotFound  = errors.New("litter log not found")
+	ErrWaterLogNotFound   = errors.New("water log not found")
 	ErrCaregiverDuplicate = errors.New("caregiver already exists for this pet")
 	ErrInvalidID          = errors.New("invalid ID format")
+
+	// ErrUnauthenticated ไม่มี actor ใน context (ไม่ผ่าน auth middleware)
+	ErrUnauthenticated = errors.New("unauthenticated")
+
+	// ErrForbidden รู้ว่า actor เป็นใคร และเกี่ยวข้องกับ resource นี้ แต่สิทธิ์ไม่พอ
+	//
+	// ⚠️ ใช้เฉพาะเมื่อ actor "เห็น" resource นั้นได้อยู่แล้ว (เป็น caregiver แต่ permission ไม่พอ)
+	//    ถ้า actor ไม่เกี่ยวข้องเลย ต้องคืน ErrPetNotFound แทน
+	//    ไม่งั้น client จะแยกออกว่า UUID ไหนมีอยู่จริง แล้วไล่เดาได้
+	ErrForbidden = errors.New("forbidden")
+
+	// ErrInvalidPermission client ส่ง permission ID ที่ไม่มีใน master data
+	ErrInvalidPermission = errors.New("invalid permission")
+
+	// ErrValidation request ไม่ผ่านการตรวจโครงสร้าง
+	ErrValidation = errors.New("validation failed")
 )

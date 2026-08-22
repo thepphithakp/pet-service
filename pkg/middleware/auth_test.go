@@ -5,13 +5,19 @@ import (
 	"crypto/rsa"
 	"encoding/json"
 	"io"
+	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
+
+	"github.com/vertex/pet-service/internal/domain"
 )
+
+const testSub = "11111111-1111-1111-1111-111111111111"
 
 func testKey(t *testing.T) *rsa.PrivateKey {
 	t.Helper()
@@ -31,15 +37,28 @@ func sign(t *testing.T, k *rsa.PrivateKey, claims jwt.MapClaims) string {
 	return s
 }
 
-func authApp(pub *rsa.PublicKey) *fiber.App {
+func authApp(pub *rsa.PublicKey, opts ...func(*AuthConfig)) *fiber.App {
+	cfg := AuthConfig{PublicKey: pub}
+	for _, o := range opts {
+		o(&cfg)
+	}
 	app := fiber.New(fiber.Config{ErrorHandler: ErrorHandler})
-	app.Get("/x", NewAuthMiddleware(pub), func(c *fiber.Ctx) error {
+	app.Get("/x", NewAuthMiddleware(cfg), func(c *fiber.Ctx) error {
+		actor, _ := domain.ActorFromContext(c.UserContext())
 		return c.JSON(fiber.Map{
 			"userId":   c.Locals("userId"),
 			"userName": c.Locals("userName"),
+			"roles":    actor.Roles,
+			"email":    actor.Email,
 		})
 	})
 	return app
+}
+
+func bearerReq(tok string) *http.Request {
+	req := httptest.NewRequest("GET", "/x", nil)
+	req.Header.Set("Authorization", "Bearer "+tok)
+	return req
 }
 
 func TestAuthMiddleware(t *testing.T) {
@@ -74,7 +93,7 @@ func TestAuthMiddleware(t *testing.T) {
 	})
 
 	t.Run("token หมดอายุ → 401", func(t *testing.T) {
-		tok := sign(t, key, jwt.MapClaims{"sub": "u", "exp": time.Now().Add(-time.Hour).Unix()})
+		tok := sign(t, key, jwt.MapClaims{"sub": testSub, "exp": time.Now().Add(-time.Hour).Unix()})
 		req := httptest.NewRequest("GET", "/x", nil)
 		req.Header.Set("Authorization", "Bearer "+tok)
 		res, _ := app.Test(req, -1)
@@ -85,7 +104,7 @@ func TestAuthMiddleware(t *testing.T) {
 
 	t.Run("เซ็นด้วย key อื่น → 401", func(t *testing.T) {
 		other := testKey(t)
-		tok := sign(t, other, jwt.MapClaims{"sub": "u", "exp": time.Now().Add(time.Hour).Unix()})
+		tok := sign(t, other, jwt.MapClaims{"sub": testSub, "exp": time.Now().Add(time.Hour).Unix()})
 		req := httptest.NewRequest("GET", "/x", nil)
 		req.Header.Set("Authorization", "Bearer "+tok)
 		res, _ := app.Test(req, -1)
@@ -119,21 +138,126 @@ func TestAuthMiddleware(t *testing.T) {
 		}
 	})
 
-	// S-5: ยังไม่ verify iss/aud — token จาก issuer อื่นที่เซ็นด้วย key เดียวกันก็ผ่าน
-	t.Run("known gap S-5: ไม่ verify iss/aud", func(t *testing.T) {
+	t.Run("scheme เป็น case-insensitive ตาม RFC 7235", func(t *testing.T) {
+		tok := sign(t, key, jwt.MapClaims{"sub": testSub, "exp": time.Now().Add(time.Hour).Unix()})
+		req := httptest.NewRequest("GET", "/x", nil)
+		req.Header.Set("Authorization", "bearer "+tok)
+		res, _ := app.Test(req, -1)
+		if res.StatusCode != 200 {
+			t.Fatalf("status = %d", res.StatusCode)
+		}
+	})
+
+	t.Run("sub ที่ไม่ใช่ uuid → 401", func(t *testing.T) {
+		tok := sign(t, key, jwt.MapClaims{"sub": "ไม่ใช่ uuid", "exp": time.Now().Add(time.Hour).Unix()})
+		res, _ := app.Test(bearerReq(tok), -1)
+		if res.StatusCode != 401 {
+			t.Fatalf("status = %d", res.StatusCode)
+		}
+	})
+}
+
+// S-5 แก้แล้ว: iss/aud ถูกตรวจเมื่อตั้งค่าไว้
+func TestAuthMiddleware_IssuerAudience(t *testing.T) {
+	key := testKey(t)
+	strict := authApp(&key.PublicKey, func(c *AuthConfig) {
+		c.Issuer = "https://auth.vertex.local"
+		c.Audience = "vertex-api"
+	})
+
+	t.Run("iss/aud ถูกต้อง → ผ่าน", func(t *testing.T) {
 		tok := sign(t, key, jwt.MapClaims{
-			"sub": "11111111-1111-1111-1111-111111111111",
-			"iss": "https://issuer-ปลอม",
-			"aud": "service-อื่น",
+			"sub": testSub, "iss": "https://auth.vertex.local", "aud": "vertex-api",
 			"exp": time.Now().Add(time.Hour).Unix(),
 		})
-		req := httptest.NewRequest("GET", "/x", nil)
-		req.Header.Set("Authorization", "Bearer "+tok)
-		res, _ := app.Test(req, -1)
-		if res.StatusCode == 200 {
-			t.Log("ยืนยัน S-5: iss/aud ไม่ถูกตรวจ — Phase 1.5 ต้องเปิด validate (แบบ 2 เฟส)")
-			return
+		if res, _ := strict.Test(bearerReq(tok), -1); res.StatusCode != 200 {
+			t.Fatalf("status = %d", res.StatusCode)
 		}
-		t.Log("S-5 ถูกแก้แล้ว")
+	})
+
+	t.Run("issuer ปลอม → 401", func(t *testing.T) {
+		tok := sign(t, key, jwt.MapClaims{
+			"sub": testSub, "iss": "https://issuer-ปลอม", "aud": "vertex-api",
+			"exp": time.Now().Add(time.Hour).Unix(),
+		})
+		if res, _ := strict.Test(bearerReq(tok), -1); res.StatusCode != 401 {
+			t.Fatalf("status = %d ต้องการ 401", res.StatusCode)
+		}
+	})
+
+	t.Run("audience ผิด → 401", func(t *testing.T) {
+		tok := sign(t, key, jwt.MapClaims{
+			"sub": testSub, "iss": "https://auth.vertex.local", "aud": "service-อื่น",
+			"exp": time.Now().Add(time.Hour).Unix(),
+		})
+		if res, _ := strict.Test(bearerReq(tok), -1); res.StatusCode != 401 {
+			t.Fatalf("status = %d ต้องการ 401", res.StatusCode)
+		}
+	})
+
+	// ⚠️ token เดิมที่ยังไม่มี iss/aud จะใช้ไม่ได้ทันทีถ้าเปิดค่านี้
+	// เป็นเหตุผลที่ต้องปล่อยแบบ 2 เฟส
+	t.Run("token เดิมที่ไม่มี iss/aud → 401 (ต้องปล่อย 2 เฟส)", func(t *testing.T) {
+		tok := sign(t, key, jwt.MapClaims{"sub": testSub, "exp": time.Now().Add(time.Hour).Unix()})
+		if res, _ := strict.Test(bearerReq(tok), -1); res.StatusCode != 401 {
+			t.Fatalf("status = %d", res.StatusCode)
+		}
+	})
+}
+
+// roles claim + สะพานชั่วคราว ADMIN_USER_IDS
+func TestAuthMiddleware_Roles(t *testing.T) {
+	key := testKey(t)
+	adminID := uuid.MustParse(testSub)
+
+	readRoles := func(app *fiber.App, tok string) []string {
+		res, _ := app.Test(bearerReq(tok), -1)
+		b, _ := io.ReadAll(res.Body)
+		var m struct {
+			Roles []string `json:"roles"`
+		}
+		_ = json.Unmarshal(b, &m)
+		return m.Roles
+	}
+
+	t.Run("token ที่มี roles → ใช้ตามนั้น", func(t *testing.T) {
+		app := authApp(&key.PublicKey)
+		tok := sign(t, key, jwt.MapClaims{
+			"sub": testSub, "roles": []string{"SUPER_ADMIN"},
+			"exp": time.Now().Add(time.Hour).Unix(),
+		})
+		if got := readRoles(app, tok); len(got) != 1 || got[0] != "SUPER_ADMIN" {
+			t.Fatalf("roles = %v", got)
+		}
+	})
+
+	// สำคัญ: token เดิมที่ออกก่อน Phase 1A ต้องใช้งานได้ต่อในฐานะ USER
+	t.Run("token ที่ไม่มี roles → USER (deploy ได้โดยผู้ใช้เดิมไม่พัง)", func(t *testing.T) {
+		app := authApp(&key.PublicKey)
+		tok := sign(t, key, jwt.MapClaims{"sub": testSub, "exp": time.Now().Add(time.Hour).Unix()})
+		if got := readRoles(app, tok); len(got) != 1 || got[0] != domain.RoleUser {
+			t.Fatalf("roles = %v ต้องการ [USER]", got)
+		}
+	})
+
+	t.Run("ADMIN_USER_IDS ให้ SUPER_ADMIN ระหว่างรอ roles claim", func(t *testing.T) {
+		app := authApp(&key.PublicKey, func(c *AuthConfig) {
+			c.AdminUserIDs = map[uuid.UUID]bool{adminID: true}
+		})
+		tok := sign(t, key, jwt.MapClaims{"sub": testSub, "exp": time.Now().Add(time.Hour).Unix()})
+		got := readRoles(app, tok)
+		if len(got) != 1 || got[0] != domain.RoleSuperAdmin {
+			t.Fatalf("roles = %v ต้องการ [SUPER_ADMIN]", got)
+		}
+	})
+
+	t.Run("คนที่ไม่อยู่ใน allowlist ไม่ได้ SUPER_ADMIN", func(t *testing.T) {
+		app := authApp(&key.PublicKey, func(c *AuthConfig) {
+			c.AdminUserIDs = map[uuid.UUID]bool{uuid.New(): true}
+		})
+		tok := sign(t, key, jwt.MapClaims{"sub": testSub, "exp": time.Now().Add(time.Hour).Unix()})
+		if got := readRoles(app, tok); got[0] == domain.RoleSuperAdmin {
+			t.Fatal("ไม่ควรได้ SUPER_ADMIN")
+		}
 	})
 }

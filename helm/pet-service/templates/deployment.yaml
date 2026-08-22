@@ -60,6 +60,21 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.db.credentialsSecret }}
                   key: password
+            {{- if .Values.jwt.publicKeysSecret }}
+            - name: JWT_PUBLIC_KEYS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.jwt.publicKeysSecret }}
+                  key: keys
+            {{- end }}
+            {{- if .Values.jwt.issuer }}
+            - name: JWT_ISSUER
+              value: {{ .Values.jwt.issuer | quote }}
+            {{- end }}
+            {{- if .Values.jwt.audience }}
+            - name: JWT_AUDIENCE
+              value: {{ .Values.jwt.audience | quote }}
+            {{- end }}
             {{- with .Values.env }}
             {{- toYaml . | nindent 12 }}
             {{- end }}

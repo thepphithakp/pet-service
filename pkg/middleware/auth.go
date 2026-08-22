@@ -2,7 +2,6 @@ package middleware
 
 import (
 	"crypto/rsa"
-	"fmt"
 	"strings"
 	"time"
 
@@ -16,7 +15,12 @@ import (
 
 // AuthConfig ควบคุมความเข้มของการตรวจ token
 type AuthConfig struct {
-	PublicKey *rsa.PublicKey
+	// PublicKeys คือ public key ทุกใบที่ยอมรับได้
+	//
+	// รับหลายใบเพื่อให้ rotate key ได้โดยไม่มี downtime:
+	// ระหว่างเปลี่ยนผ่านต้องยอมรับทั้งใบเก่า (สำหรับ token ที่ยังไม่หมดอายุ)
+	// และใบใหม่ไปพร้อมกัน
+	PublicKeys []*rsa.PublicKey
 
 	// Issuer / Audience ตรวจเมื่อไม่ว่างเท่านั้น
 	//
@@ -47,18 +51,15 @@ func NewAuthMiddleware(cfg AuthConfig) fiber.Handler {
 		opts = append(opts, jwt.WithAudience(cfg.Audience))
 	}
 
+	keys := newKeySet(cfg.PublicKeys)
+
 	return func(c *fiber.Ctx) error {
 		tokenString, ok := bearerToken(c.Get("Authorization"))
 		if !ok {
 			return apperror.Unauthorized("Missing or invalid authorization header")
 		}
 
-		token, err := jwt.Parse(tokenString, func(t *jwt.Token) (interface{}, error) {
-			if _, ok := t.Method.(*jwt.SigningMethodRSA); !ok {
-				return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
-			}
-			return cfg.PublicKey, nil
-		}, opts...)
+		token, err := jwt.Parse(tokenString, keys.keyfunc, opts...)
 		if err != nil || !token.Valid {
 			return apperror.Unauthorized("Invalid or expired token")
 		}

@@ -38,7 +38,10 @@ func sign(t *testing.T, k *rsa.PrivateKey, claims jwt.MapClaims) string {
 }
 
 func authApp(pub *rsa.PublicKey, opts ...func(*AuthConfig)) *fiber.App {
-	cfg := AuthConfig{PublicKey: pub}
+	cfg := AuthConfig{}
+	if pub != nil {
+		cfg.PublicKeys = []*rsa.PublicKey{pub}
+	}
 	for _, o := range opts {
 		o(&cfg)
 	}
@@ -258,6 +261,113 @@ func TestAuthMiddleware_Roles(t *testing.T) {
 		tok := sign(t, key, jwt.MapClaims{"sub": testSub, "exp": time.Now().Add(time.Hour).Unix()})
 		if got := readRoles(app, tok); got[0] == domain.RoleSuperAdmin {
 			t.Fatal("ไม่ควรได้ SUPER_ADMIN")
+		}
+	})
+}
+
+// TestKeyRotation ยืนยันว่า rotate key ได้โดย token ที่ยังไม่หมดอายุไม่พัง
+//
+// นี่คือเงื่อนไขที่ทำให้ rotate key ได้จริงโดยไม่มี downtime:
+// ระหว่างเปลี่ยนผ่าน service ต้องยอมรับทั้งใบเก่าและใบใหม่พร้อมกัน
+func TestKeyRotation(t *testing.T) {
+	oldKey := testKey(t)
+	newKey := testKey(t)
+
+	claims := func() jwt.MapClaims {
+		return jwt.MapClaims{"sub": testSub, "exp": time.Now().Add(time.Hour).Unix()}
+	}
+
+	// ระหว่าง rotate: ยอมรับทั้งสองใบ
+	both := authApp(nil, func(c *AuthConfig) {
+		c.PublicKeys = []*rsa.PublicKey{&oldKey.PublicKey, &newKey.PublicKey}
+	})
+
+	t.Run("token ที่เซ็นด้วยคีย์เก่ายังใช้ได้", func(t *testing.T) {
+		if res, _ := both.Test(bearerReq(sign(t, oldKey, claims())), -1); res.StatusCode != 200 {
+			t.Fatalf("status = %d — token เก่าต้องยังใช้ได้ระหว่าง rotate", res.StatusCode)
+		}
+	})
+
+	t.Run("token ที่เซ็นด้วยคีย์ใหม่ใช้ได้", func(t *testing.T) {
+		if res, _ := both.Test(bearerReq(sign(t, newKey, claims())), -1); res.StatusCode != 200 {
+			t.Fatalf("status = %d", res.StatusCode)
+		}
+	})
+
+	t.Run("คีย์ที่ไม่อยู่ในรายการยังถูกปฏิเสธ", func(t *testing.T) {
+		rogue := testKey(t)
+		if res, _ := both.Test(bearerReq(sign(t, rogue, claims())), -1); res.StatusCode != 401 {
+			t.Fatalf("status = %d ต้องการ 401", res.StatusCode)
+		}
+	})
+
+	// หลัง rotate เสร็จ: เอาใบเก่าออก
+	t.Run("เอาคีย์เก่าออกแล้ว token เก่าต้องใช้ไม่ได้", func(t *testing.T) {
+		newOnly := authApp(nil, func(c *AuthConfig) {
+			c.PublicKeys = []*rsa.PublicKey{&newKey.PublicKey}
+		})
+		if res, _ := newOnly.Test(bearerReq(sign(t, oldKey, claims())), -1); res.StatusCode != 401 {
+			t.Fatalf("status = %d ต้องการ 401", res.StatusCode)
+		}
+		if res, _ := newOnly.Test(bearerReq(sign(t, newKey, claims())), -1); res.StatusCode != 200 {
+			t.Fatalf("status = %d", res.StatusCode)
+		}
+	})
+}
+
+// TestKeyID ยืนยันว่า kid คำนวณจากตัวคีย์ได้ค่าเดียวกันเสมอ
+// ทำให้ผู้เซ็นและผู้ตรวจไม่ต้องตกลงชื่อ kid กันล่วงหน้า
+func TestKeyID(t *testing.T) {
+	k := testKey(t)
+	id1 := KeyID(&k.PublicKey)
+	id2 := KeyID(&k.PublicKey)
+	if id1 == "" || id1 != id2 {
+		t.Fatalf("kid ต้องคงที่: %q vs %q", id1, id2)
+	}
+	other := testKey(t)
+	if KeyID(&other.PublicKey) == id1 {
+		t.Fatal("คีย์คนละใบต้องได้ kid ต่างกัน")
+	}
+}
+
+// token ที่มี kid ต้องเลือกคีย์ได้ตรงใบ และ kid มั่วต้องถูกปฏิเสธ
+func TestKeyID_Routing(t *testing.T) {
+	oldKey, newKey := testKey(t), testKey(t)
+	app := authApp(nil, func(c *AuthConfig) {
+		c.PublicKeys = []*rsa.PublicKey{&oldKey.PublicKey, &newKey.PublicKey}
+	})
+
+	withKID := func(k *rsa.PrivateKey, kid string) string {
+		tok := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
+			"sub": testSub, "exp": time.Now().Add(time.Hour).Unix(),
+		})
+		tok.Header["kid"] = kid
+		s, err := tok.SignedString(k)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return s
+	}
+
+	t.Run("kid ตรงกับคีย์ → ผ่าน", func(t *testing.T) {
+		tok := withKID(newKey, KeyID(&newKey.PublicKey))
+		if res, _ := app.Test(bearerReq(tok), -1); res.StatusCode != 200 {
+			t.Fatalf("status = %d", res.StatusCode)
+		}
+	})
+
+	t.Run("kid ไม่รู้จัก → 401", func(t *testing.T) {
+		tok := withKID(newKey, "kid-ที่ไม่มีอยู่")
+		if res, _ := app.Test(bearerReq(tok), -1); res.StatusCode != 401 {
+			t.Fatalf("status = %d ต้องการ 401", res.StatusCode)
+		}
+	})
+
+	// เคสสำคัญ: kid ชี้ไปคีย์ A แต่เซ็นด้วยคีย์ B ต้องไม่ผ่าน
+	t.Run("kid ชี้คีย์หนึ่ง แต่เซ็นด้วยอีกคีย์ → 401", func(t *testing.T) {
+		tok := withKID(oldKey, KeyID(&newKey.PublicKey))
+		if res, _ := app.Test(bearerReq(tok), -1); res.StatusCode != 401 {
+			t.Fatalf("status = %d ต้องการ 401", res.StatusCode)
 		}
 	})
 }

@@ -52,6 +52,12 @@ type JWTConfig struct {
 	PublicKeyPEM  string
 	PublicKeyPath string
 
+	// PublicKeysPEM รับ PEM หลายบล็อกต่อกันในค่าเดียว
+	//
+	// ใช้ตอน rotate key: ระหว่างเปลี่ยนผ่านต้องยอมรับทั้งใบเก่าและใบใหม่
+	// จนกว่า token ที่เซ็นด้วยใบเก่าจะหมดอายุครบทุกใบ
+	PublicKeysPEM string
+
 	// Issuer / Audience ตรวจเมื่อไม่ว่างเท่านั้น
 	// ⚠️ เปิดได้หลัง auth-service ออก claim สองตัวนี้แล้วอย่างน้อย 72 ชม.
 	//    (เท่าอายุ token เดิม) ไม่งั้น token ที่ผู้ใช้ถืออยู่จะใช้ไม่ได้ทันที
@@ -99,6 +105,7 @@ func Load() (Config, error) {
 		JWT: JWTConfig{
 			PublicKeyPEM:  os.Getenv("JWT_PUBLIC_KEY"),
 			PublicKeyPath: env("JWT_PUBLIC_KEY_PATH", "keys/public.pem"),
+			PublicKeysPEM: os.Getenv("JWT_PUBLIC_KEYS"),
 			Issuer:        os.Getenv("JWT_ISSUER"),
 			Audience:      os.Getenv("JWT_AUDIENCE"),
 			AdminUserIDs:  splitList(os.Getenv("ADMIN_USER_IDS")),

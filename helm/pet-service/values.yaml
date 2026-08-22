@@ -101,6 +101,15 @@ migration:
       cpu: 500m
       memory: 512Mi
 
+# --- JWT ------------------------------------------------------------------
+jwt:
+  # Secret ที่เก็บ public key ทุกใบที่ยอมรับ (คีย์ "keys" เป็น PEM ต่อกันได้หลายใบ)
+  # เว้นว่าง = อ่านจากไฟล์ใน image เหมือนเดิม
+  # ระหว่าง rotate ให้ใส่ทั้งใบเก่าและใบใหม่ — ดู docs/KEY_ROTATION.md
+  publicKeysSecret: ""
+  issuer: ""
+  audience: ""
+
 # --- Application env ------------------------------------------------------
 env:
   - name: EVENT_SERVICE_URL

@@ -1322,10 +1322,46 @@ cursor เป็น `(date, id)` ไม่ใช่ `date` อย่างเด
 3. `Publish` เปลี่ยน signature ให้คืน `error` (ตอนนี้กลืน error หมด)
 4. Idempotency key ที่ event-service เพื่อกัน duplicate จาก retry
 
-**Acceptance**
-- [ ] kill event-service แล้วสร้าง pet → business data commit สำเร็จ, event ค้างใน outbox
-- [ ] เปิด event-service กลับมา → event ถูกส่งภายใน 30 วินาทีโดยไม่ต้อง restart pet-service
-- [ ] `SIGTERM` ระหว่างมี event ค้าง → ไม่มี event หาย
+**สถานะ (2026-08-23) — ทำครบทั้ง 4 ข้อแล้ว**
+
+| ข้อ | สถานะ |
+|---|---|
+| 1 timeout / ctx / worker pool | ✅ ทำใน Phase 6 |
+| 2 transactional outbox | ✅ ทำแล้ว |
+| 3 `Publish` คืน error | ✅ `EventSender.Send` คืน error ให้ worker ตัดสินใจ retry |
+| 4 idempotency key ที่ event-service | ✅ ทำใน Phase 10 (unique index บางส่วน) |
+
+**Acceptance** — พิสูจน์ด้วย integration test บนฐานข้อมูลจริง
+- [x] event-service ล่มแล้วสร้าง log → business data commit สำเร็จ, event ค้างใน outbox
+- [x] event-service กลับมา → worker ส่งเองโดยไม่ต้อง restart pet-service
+- [x] ข้อมูลถูก rollback → ไม่มี event ค้าง (พิสูจน์ว่า atomic จริง ไม่ใช่แค่ "เขียนสองที่")
+- [x] idempotency key คงที่ระหว่าง retry
+- [x] `SIGTERM` ระหว่างมี event ค้าง → ไม่มี event หาย
+      (event อยู่ใน database แล้ว pod ใหม่ทำต่อได้ทันที — worker ทำรอบแรก
+      ตอน start ไม่ต้องรอ tick แรก)
+
+**พิสูจน์บน production จริง** (2026-08-23)
+
+ใส่ event ทดสอบเข้า `event_outbox` ตรงๆ แล้วดูว่า worker จัดการเองครบวงจร
+
+```
+12:30:26  insert เข้า outbox
+12:30:38  published_at ถูกตั้ง  ← worker ส่งเองใน ~12 วินาที
+          event.event_logs พบ 1 แถว idempotency_key ตรงกับ id ของแถว outbox
+```
+
+ลบข้อมูลทดสอบออกแล้ว — `event_logs` เหลือ 69 แถวซึ่งเป็นข้อมูลจริงทั้งหมด
+
+**สิ่งที่จงใจไม่ทำ**
+
+- ไม่ลบ event ที่ส่งไม่สำเร็จทิ้งหลังครบ max attempts — ปล่อยค้างไว้ให้เห็นใน
+  `outbox_pending_count` เพราะ event ที่ส่งไม่ได้คือปัญหาที่คนต้องมาดู
+  ไม่ใช่ขยะที่ควรซ่อน (ยังคง backoff ต่อที่ 30 นาทีและยกระดับ log เป็น ERROR)
+- ยังยิง HTTP ระหว่างถือ lock ของ transaction — ยอมรับได้เพราะ batch เล็ก (20)
+  และ client มี timeout 5 วินาที ถ้าปริมาณสูงขึ้นมากให้แยกเป็น
+  claim → ปิด transaction → ส่ง → อัปเดต
+- ยังไม่มี job ล้างแถวที่ส่งแล้ว — `DeletePublishedBefore` เขียนไว้แล้วแต่ยังไม่มี
+  ใครเรียก ตารางจะโตช้ามากที่ปริมาณปัจจุบัน
 
 ---
 

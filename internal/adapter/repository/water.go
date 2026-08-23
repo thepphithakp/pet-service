@@ -2,9 +2,11 @@ package repository
 
 import (
 	"context"
+	"errors"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"github.com/vertex/pet-service/internal/adapter/repository/model"
 	"github.com/vertex/pet-service/internal/domain"
@@ -19,11 +21,39 @@ func NewGORMWaterRepository(db *gorm.DB) *GORMWaterRepository {
 	return &GORMWaterRepository{db: db}
 }
 
+// Save เขียน log ใหม่แบบ idempotent
+//
+// id มาจาก client ได้ (แอปสร้างเองเพื่อ optimistic update และ offline sync)
+// ถ้าเน็ตหลุดแล้วแอปส่งซ้ำด้วย id เดิม การ INSERT ตรงๆ จะชน primary key
+// แล้วกลายเป็น 500 ทั้งที่ข้อมูลถูกบันทึกไปแล้วเรียบร้อย
+//
+// ON CONFLICT DO NOTHING ทำให้ส่งซ้ำแล้วได้แถวเดิมกลับไป ไม่ใช่ error
 func (r *GORMWaterRepository) Save(ctx context.Context, log *domain.WaterLog) (*domain.WaterLog, error) {
 	m := model.WaterFromDomain(*log)
-	if err := r.db.WithContext(ctx).Create(&m).Error; err != nil {
-		return nil, err
+
+	tx := r.db.WithContext(ctx).
+		Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "id"}}, DoNothing: true}).
+		Create(&m)
+	if tx.Error != nil {
+		return nil, tx.Error
 	}
+
+	if tx.RowsAffected == 0 {
+		// มีแถวนี้อยู่แล้ว — ถ้าเป็นของสัตว์เลี้ยงตัวเดิม ถือว่าส่งซ้ำ คืนของเดิมไป
+		var existing model.Water
+		err := r.db.WithContext(ctx).
+			First(&existing, "id = ? AND pet_id = ?", m.ID, m.PetID).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			// id ไปชนรายการของสัตว์เลี้ยงตัวอื่น — บอกให้ชัดแทนที่จะเป็น 500
+			return nil, domain.ErrLogIDConflict
+		}
+		if err != nil {
+			return nil, err
+		}
+		found := existing.ToDomain()
+		return &found, nil
+	}
+
 	created := m.ToDomain()
 	return &created, nil
 }

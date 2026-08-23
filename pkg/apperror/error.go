@@ -65,6 +65,9 @@ func FromDomain(err error) *AppError {
 		return NotFound("Master data", err)
 	case errors.Is(err, domain.ErrMasterDataDuplicate):
 		return &AppError{Code: http.StatusConflict, Message: "รหัสนี้มีอยู่แล้ว", Cause: err}
+	case errors.Is(err, domain.ErrLogIDConflict):
+		return &AppError{Code: http.StatusConflict,
+			Message: "id ของรายการนี้ถูกใช้ไปแล้วกับสัตว์เลี้ยงตัวอื่น", Cause: err}
 	case errors.Is(err, domain.ErrVersionConflict):
 		return &AppError{Code: http.StatusConflict,
 			Message: "มีคนอื่นแก้ไขรายการนี้ไปแล้ว กรุณาโหลดใหม่แล้วลองอีกครั้ง", Cause: err}

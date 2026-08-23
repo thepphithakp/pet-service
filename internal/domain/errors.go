@@ -11,6 +11,14 @@ var (
 	ErrCaregiverDuplicate = errors.New("caregiver already exists for this pet")
 	ErrInvalidID          = errors.New("invalid ID format")
 
+	// ErrLogIDConflict เกิดเมื่อ client ส่ง id ที่ถูกใช้ไปแล้วกับสัตว์เลี้ยงตัวอื่น
+	//
+	// id มาจาก client ได้ (แพตเทิร์น optimistic update / offline sync)
+	// การส่งซ้ำด้วย id เดิมกับสัตว์เลี้ยงตัวเดิมถือว่าปกติและได้แถวเดิมกลับไป
+	// แต่ id ที่ไปชนของสัตว์เลี้ยงตัวอื่นแปลว่ามีอะไรผิด ต้องบอกให้ชัด
+	// ไม่ใช่ปล่อยเป็น 500 ที่ไล่สาเหตุไม่ได้
+	ErrLogIDConflict = errors.New("log id already used by another pet")
+
 	// ErrUnauthenticated ไม่มี actor ใน context (ไม่ผ่าน auth middleware)
 	ErrUnauthenticated = errors.New("unauthenticated")
 

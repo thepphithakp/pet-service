@@ -14,9 +14,23 @@ import (
 // litter นับเป็นครั้ง water เป็นมิลลิลิตร
 const maxLogAmount = 10000
 
-// LitterLogRequest — ไม่มี id, petId, createdBy, createdByUsername, isActive
+// LitterLogRequest — ไม่มี petId, createdBy, createdByUsername, isActive
 // petId มาจาก path เสมอ ส่วน createdBy มาจาก token
+//
+// ⚠️ ID รับจาก client โดยตั้งใจ
+//
+// แอปสร้าง UUID เองแล้วแสดงรายการทันทีก่อนที่ POST จะกลับมา (optimistic update)
+// ถ้า server ไม่ใช้ id ที่ส่งมาแล้วสร้างใหม่ พอ refresh จะได้อีกแถวที่ id คนละตัว
+// แอปจึงแสดงสองรายการจากการบันทึกครั้งเดียว และลบรายการที่แอปสร้างเองได้ 404
+// (เกิดขึ้นจริงกับ water log เมื่อ 2026-08-23)
+//
+// การให้ client กำหนด id ยังทำให้ POST ซ้ำเป็น idempotent ซึ่งจำเป็นกับ
+// การใช้งานแบบ offline sync — เป็นแพตเทิร์นเดียวกับที่ BatchLitterLogRequest ใช้อยู่
+//
+// ปลอดภัยเพราะ id เป็นแค่ตัวระบุแถว ไม่ได้ให้สิทธิ์อะไร
+// ส่วนฟิลด์ที่ให้สิทธิ์ (createdBy) ยังมาจาก token เท่านั้น
 type LitterLogRequest struct {
+	ID     uuid.UUID `json:"id"`
 	Date   time.Time `json:"date"`
 	Type   string    `json:"type"`
 	Amount int       `json:"amount"`
@@ -47,26 +61,22 @@ func (r LitterLogRequest) ToDomain() domain.LitterLog {
 	if date.IsZero() {
 		date = time.Now()
 	}
-	return domain.LitterLog{Date: date, Type: r.Type, Amount: r.Amount, IsActive: true}
+	return domain.LitterLog{ID: r.ID, Date: date, Type: r.Type, Amount: r.Amount, IsActive: true}
 }
 
-// BatchLitterLogRequest ยังรับ id ได้
+// BatchLitterLogRequest เหมือน LitterLogRequest ทุกอย่าง
 //
-// การให้ client กำหนด id เองเป็นแพตเทิร์น idempotency ของ offline sync
-// endpoint นี้ถูกเพิ่มมาเพื่อการนั้น จึงคงไว้เพื่อไม่ให้ client ที่ใช้อยู่พัง
+// เดิมแยกไว้เพราะมีแต่ batch ที่รับ id ตอนนี้ single ก็รับแล้ว
+// คงชื่อไว้เพื่อไม่ให้ต้องแก้ handler ที่เรียกใช้อยู่
 type BatchLitterLogRequest struct {
-	ID uuid.UUID `json:"id"`
 	LitterLogRequest
 }
 
-func (r BatchLitterLogRequest) ToDomain() domain.LitterLog {
-	l := r.LitterLogRequest.ToDomain()
-	l.ID = r.ID
-	return l
-}
-
-// WaterLogRequest — ไม่มี id, petId, createdBy, isActive
+// WaterLogRequest — ไม่มี petId, createdBy, isActive
+//
+// ⚠️ ID รับจาก client ด้วยเหตุผลเดียวกับ LitterLogRequest ข้างบน
 type WaterLogRequest struct {
+	ID     uuid.UUID `json:"id"`
 	Date   time.Time `json:"date"`
 	Amount int       `json:"amount"`
 }
@@ -90,7 +100,7 @@ func (r WaterLogRequest) ToDomain() domain.WaterLog {
 	if date.IsZero() {
 		date = time.Now()
 	}
-	return domain.WaterLog{Date: date, Amount: r.Amount, IsActive: true}
+	return domain.WaterLog{ID: r.ID, Date: date, Amount: r.Amount, IsActive: true}
 }
 
 // AddCaregiverRequest

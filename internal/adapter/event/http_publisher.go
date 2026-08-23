@@ -8,8 +8,13 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/vertex/pet-service/internal/port"
 )
+
+// serviceTokenHeader ต้องตรงกับที่ event-service อ่าน
+const serviceTokenHeader = "X-Service-Token"
 
 // publishTimeout จำกัดเวลาที่ยอมรอ event-service
 //
@@ -26,15 +31,22 @@ const maxInFlight = 32
 type HTTPEventPublisher struct {
 	EventServiceURL string
 
+	// ingestToken ยืนยันกับ event-service ว่าผู้เรียกเป็น service ไม่ใช่ผู้ใช้
+	//
+	// endpoint ปลายทางเคยเปิดโล่ง ใครก็ยิง event ปลอมเข้าระบบได้
+	// ซึ่งทำให้ audit log ที่มีไว้ตรวจสอบเชื่อถือไม่ได้
+	ingestToken string
+
 	client *http.Client
 	// slots ทำหน้าที่เป็นเพดานจำนวน goroutine ที่ทำงานพร้อมกัน
 	slots chan struct{}
 }
 
-// NewHTTPEventPublisher รับ URL จากภายนอกแทนการอ่าน env เอง (แก้ A-5)
-func NewHTTPEventPublisher(eventServiceURL string) *HTTPEventPublisher {
+// NewHTTPEventPublisher รับค่าจากภายนอกแทนการอ่าน env เอง (แก้ A-5)
+func NewHTTPEventPublisher(eventServiceURL, ingestToken string) *HTTPEventPublisher {
 	return &HTTPEventPublisher{
 		EventServiceURL: eventServiceURL,
+		ingestToken:     ingestToken,
 		client:          &http.Client{Timeout: publishTimeout},
 		slots:           make(chan struct{}, maxInFlight),
 	}
@@ -51,6 +63,12 @@ func (p *HTTPEventPublisher) Publish(ctx context.Context, event port.EventLog) {
 	// ถ้าใช้ ctx เดิม request จบก่อน goroutine จะโดน cancel ทันที
 	bg := context.WithoutCancel(ctx)
 
+	// สร้างคีย์ครั้งเดียวต่อหนึ่งเหตุการณ์ ไม่ใช่ต่อหนึ่งครั้งที่ยิง HTTP
+	//
+	// ตอนนี้ยิงครั้งเดียวจึงยังไม่เห็นผล แต่เมื่อ Phase 7.2 เปลี่ยนเป็น outbox
+	// ที่ retry ได้ การส่งซ้ำด้วยคีย์เดิมจะไม่ทำให้เกิด event ซ้ำในฐานข้อมูล
+	idempotencyKey := uuid.NewString()
+
 	select {
 	case p.slots <- struct{}{}:
 	default:
@@ -66,15 +84,18 @@ func (p *HTTPEventPublisher) Publish(ctx context.Context, event port.EventLog) {
 		reqCtx, cancel := context.WithTimeout(bg, publishTimeout)
 		defer cancel()
 
-		if err := p.send(reqCtx, event); err != nil {
+		if err := p.send(reqCtx, event, idempotencyKey); err != nil {
 			slog.ErrorContext(reqCtx, "ส่ง event ไม่สำเร็จ",
 				"eventType", event.EventType, "entityId", event.EntityID, "error", err)
 		}
 	}()
 }
 
-func (p *HTTPEventPublisher) send(ctx context.Context, event port.EventLog) error {
-	body, err := json.Marshal(event)
+func (p *HTTPEventPublisher) send(ctx context.Context, event port.EventLog, idempotencyKey string) error {
+	body, err := json.Marshal(struct {
+		port.EventLog
+		IdempotencyKey string `json:"idempotencyKey"`
+	}{EventLog: event, IdempotencyKey: idempotencyKey})
 	if err != nil {
 		return err
 	}
@@ -85,6 +106,9 @@ func (p *HTTPEventPublisher) send(ctx context.Context, event port.EventLog) erro
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	if p.ingestToken != "" {
+		req.Header.Set(serviceTokenHeader, p.ingestToken)
+	}
 
 	resp, err := p.client.Do(req)
 	if err != nil {

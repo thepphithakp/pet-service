@@ -43,7 +43,7 @@ func wire(db *gorm.DB, cfg config.Config) (handlers, *event.HTTPEventPublisher) 
 	waterRepo := repository.NewGORMWaterRepository(db)
 	capabilityRepo := repository.NewGORMCapabilityRepository(db)
 	masterDataRepo := repository.NewGORMMasterDataRepository(db)
-	eventPublisher := event.NewHTTPEventPublisher(cfg.EventServiceURL)
+	eventPublisher := event.NewHTTPEventPublisher(cfg.EventServiceURL, cfg.EventIngestToken)
 
 	// Authorizer ใช้ร่วมกันทุก service — บังคับสิทธิ์ที่ชั้น application
 	authz := application.NewAuthorizer(petRepo, capabilityRepo)

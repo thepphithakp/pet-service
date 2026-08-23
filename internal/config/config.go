@@ -17,6 +17,13 @@ type Config struct {
 
 	EventServiceURL string
 
+	// EventIngestToken คือ token ที่ event-service ใช้ยืนยันว่าผู้เรียกเป็น service
+	// ไม่ใช่ผู้ใช้ทั่วไป — ต้องเป็นค่าเดียวกับ EVENT_INGEST_TOKEN ฝั่งนั้น
+	//
+	// ว่างได้: ถ้าไม่ตั้ง event จะถูกปฏิเสธที่ปลายทางและถูก log ไว้
+	// แต่ request หลักของผู้ใช้ยังทำงานปกติ (การส่ง event เป็น fire-and-forget)
+	EventIngestToken string
+
 	Log      LogConfig
 	Shutdown ShutdownConfig
 }
@@ -127,7 +134,8 @@ func Load() (Config, error) {
 			Audience:      os.Getenv("JWT_AUDIENCE"),
 			AdminUserIDs:  splitList(os.Getenv("ADMIN_USER_IDS")),
 		},
-		EventServiceURL: env("EVENT_SERVICE_URL", "http://event-service.vertex.svc.cluster.local:4002"),
+		EventServiceURL:  env("EVENT_SERVICE_URL", "http://event-service.vertex.svc.cluster.local:4002"),
+		EventIngestToken: os.Getenv("EVENT_INGEST_TOKEN"),
 		Log: LogConfig{
 			Level: env("LOG_LEVEL", "info"),
 			Body:  os.Getenv("LOG_BODY") == "true",

@@ -218,6 +218,14 @@ jwt:
   issuer: ""
   audience: ""
 
+# --- Event service --------------------------------------------------------
+#
+# event-service ปฏิเสธ request ที่ไม่มี X-Service-Token
+# ต้องเป็น Secret เดียวกับที่ event-service ถือ ไม่งั้น event หายเงียบๆ
+# (request ของผู้ใช้ยังทำงานปกติ เพราะการส่ง event เป็น fire-and-forget)
+event:
+  ingestTokenSecret: event-ingest-token
+
 # --- Application env ------------------------------------------------------
 env:
   - name: EVENT_SERVICE_URL

@@ -54,6 +54,11 @@ spec:
               value: {{ .Values.db.sslMode | quote }}
             - name: DB_SEARCH_PATH
               value: {{ .Values.db.searchPath | quote }}
+            - name: EVENT_INGEST_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.event.ingestTokenSecret }}
+                  key: token
             - name: SHUTDOWN_DRAIN_DELAY
               value: {{ .Values.shutdown.drainDelay | quote }}
             - name: SHUTDOWN_TIMEOUT

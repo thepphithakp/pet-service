@@ -90,6 +90,13 @@ type PetSummary struct {
 	CreatedBy        *string
 	UpdatedBy        *string
 	HasAvatar        bool
+
+	// ต้อง preload เหมือน query เดิม
+	//
+	// ถ้าไม่มี field นี้ การปิดสวิตช์ avatar จะทำให้ caregivers หายไปด้วย
+	// ซึ่งเป็นการเปลี่ยนพฤติกรรมที่ไม่ได้ตั้งใจ — สวิตช์นั้นควรเปลี่ยน
+	// เรื่องรูปอย่างเดียว
+	Caregivers []Caregiver `gorm:"foreignKey:PetID;constraint:OnDelete:CASCADE;"`
 }
 
 func (PetSummary) TableName() string { return "pets" }
@@ -117,6 +124,18 @@ func (m *PetSummary) ToDomain() domain.PetSummary {
 		BloodType: m.BloodType, Allergies: m.Allergies, Personality: m.Personality,
 		CreatedAt: m.CreatedAt, UpdatedAt: m.UpdatedAt,
 		CreatedBy: m.CreatedBy, UpdatedBy: m.UpdatedBy,
-		HasAvatar: m.HasAvatar,
+		HasAvatar:  m.HasAvatar,
+		Caregivers: caregiversToDomain(m.Caregivers),
 	}
+}
+
+func caregiversToDomain(cs []Caregiver) []domain.PetCaregiver {
+	if len(cs) == 0 {
+		return nil
+	}
+	out := make([]domain.PetCaregiver, 0, len(cs))
+	for _, c := range cs {
+		out = append(out, c.ToDomain())
+	}
+	return out
 }

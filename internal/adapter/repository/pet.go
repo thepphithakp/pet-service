@@ -146,6 +146,7 @@ func (r *GORMPetRepository) FindAllForUserSummary(ctx context.Context, userID uu
 	err := r.db.WithContext(ctx).
 		Model(&model.Pet{}).
 		Select(model.SummaryColumns()).
+		Preload("Caregivers.Permissions").
 		Where("owner_id = ?", userID).
 		Or("EXISTS (SELECT 1 FROM pet_caregivers WHERE pet_caregivers.pet_id = pets.id AND pet_caregivers.user_id = ? AND pet_caregivers.deleted_at IS NULL)", userID).
 		Find(&models).Error
@@ -160,6 +161,7 @@ func (r *GORMPetRepository) FindAllSummary(ctx context.Context) ([]domain.PetSum
 	err := r.db.WithContext(ctx).
 		Model(&model.Pet{}).
 		Select(model.SummaryColumns()).
+		Preload("Caregivers.Permissions").
 		Find(&models).Error
 	if err != nil {
 		return nil, err

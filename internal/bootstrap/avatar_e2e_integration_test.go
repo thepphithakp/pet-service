@@ -83,6 +83,61 @@ func TestPetList_WithoutAvatarIsDramaticallySmaller(t *testing.T) {
 	}
 }
 
+// TestPetList_FlagOnlyChangesAvatar
+//
+// สวิตช์ PET_LIST_INCLUDE_AVATAR ต้องเปลี่ยนเรื่องรูปอย่างเดียว
+// ตอนแรกเขียน query แบบ summary โดยลืม preload caregivers
+// ทำให้การปิดสวิตช์จะทำ field นั้นหายไปด้วยโดยไม่ตั้งใจ
+func TestPetList_FlagOnlyChangesAvatar(t *testing.T) {
+	db := openTestDB(t)
+	owner := uuid.New()
+	helper := uuid.New()
+
+	petID := seedPet(t, db, owner)
+	seedCaregiver(t, db, petID, helper, "MANAGE_WATER")
+	t.Cleanup(func() {
+		db.Exec("DELETE FROM pet_caregivers WHERE pet_id = ?", petID)
+		db.Exec("DELETE FROM pets WHERE id = ?", petID)
+	})
+
+	shapes := map[bool]map[string]any{}
+	for _, include := range []bool{true, false} {
+		app, key := avatarTestApp(t, include)
+		st, body := doJSONAs(t, app, "GET", "/api/v1/pets", "", key, owner)
+		if st != fiber.StatusOK {
+			t.Fatalf("include=%v status = %d", include, st)
+		}
+		var items []map[string]any
+		if err := json.Unmarshal(body, &items); err != nil {
+			t.Fatalf("อ่าน response ไม่ได้: %v", err)
+		}
+		if len(items) != 1 {
+			t.Fatalf("ต้องมี 1 รายการ ได้ %d", len(items))
+		}
+		shapes[include] = items[0]
+	}
+
+	// field ที่ควรต่างมีแค่เรื่องรูป
+	allowedDiff := map[string]bool{"avatarData": true, "hasAvatar": true}
+	for k := range shapes[true] {
+		if allowedDiff[k] {
+			continue
+		}
+		if _, ok := shapes[false][k]; !ok {
+			t.Errorf("ปิดสวิตช์แล้ว field %q หายไป — สวิตช์นี้ควรเปลี่ยนแค่เรื่องรูป", k)
+		}
+	}
+
+	cg, ok := shapes[false]["caregivers"].([]any)
+	if !ok || len(cg) != 1 {
+		t.Fatalf("caregivers ต้องยังอยู่ครบ: %v", shapes[false]["caregivers"])
+	}
+	first, _ := cg[0].(map[string]any)
+	if perms, ok := first["permissions"].([]any); !ok || len(perms) == 0 {
+		t.Errorf("permissions ของ caregiver ต้องถูก preload มาด้วย: %v", first)
+	}
+}
+
 // TestAvatarEndpoint_RoundTrip รูปที่ดึงผ่าน endpoint ใหม่ต้องตรงกับต้นฉบับ
 // และขอซ้ำด้วย ETag เดิมต้องได้ 304
 func TestAvatarEndpoint_RoundTrip(t *testing.T) {

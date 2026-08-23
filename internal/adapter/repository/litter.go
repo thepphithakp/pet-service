@@ -21,9 +21,20 @@ func NewGORMLitterRepository(db *gorm.DB) *GORMLitterRepository {
 	return &GORMLitterRepository{db: db}
 }
 
+// ⚠️ ต้องมี tiebreaker เสมอ
+//
+// date อย่างเดียวไม่พอ — log ที่บันทึกวันเดียวกันจะได้ลำดับไม่แน่นอน
+// PostgreSQL ไม่รับประกันลำดับของแถวที่ ORDER BY ตัดสินไม่ได้ และลำดับ
+// เปลี่ยนได้จริงหลัง UPDATE หรือ VACUUM ทำให้รายการในแอปสลับที่เองโดยไม่มีสาเหตุ
+//
+// ของเดิมไม่มี ORDER BY เลย (C-11) ทำให้ลำดับของ litter log ไม่แน่นอน
+// ต่างจาก water ที่เรียงตาม date อยู่แล้ว
 func (r *GORMLitterRepository) FindByPetID(ctx context.Context, petID uuid.UUID) ([]domain.LitterLog, error) {
 	var models []model.Litter
-	if err := r.db.WithContext(ctx).Where("pet_id = ?", petID).Find(&models).Error; err != nil {
+	if err := r.db.WithContext(ctx).
+		Where("pet_id = ?", petID).
+		Order("date desc, id desc").
+		Find(&models).Error; err != nil {
 		return nil, err
 	}
 	result := make([]domain.LitterLog, len(models))

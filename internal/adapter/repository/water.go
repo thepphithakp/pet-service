@@ -58,9 +58,17 @@ func (r *GORMWaterRepository) Save(ctx context.Context, log *domain.WaterLog) (*
 	return &created, nil
 }
 
+// ⚠️ ต้องมี tiebreaker เสมอ
+//
+// date อย่างเดียวไม่พอ — log ที่บันทึกวันเดียวกันจะได้ลำดับไม่แน่นอน
+// PostgreSQL ไม่รับประกันลำดับของแถวที่ ORDER BY ตัดสินไม่ได้ และลำดับ
+// เปลี่ยนได้จริงหลัง UPDATE หรือ VACUUM ทำให้รายการในแอปสลับที่เองโดยไม่มีสาเหตุ
 func (r *GORMWaterRepository) FindByPetID(ctx context.Context, petID uuid.UUID) ([]domain.WaterLog, error) {
 	var models []model.Water
-	if err := r.db.WithContext(ctx).Where("pet_id = ?", petID).Order("date desc").Find(&models).Error; err != nil {
+	if err := r.db.WithContext(ctx).
+		Where("pet_id = ?", petID).
+		Order("date desc, id desc").
+		Find(&models).Error; err != nil {
 		return nil, err
 	}
 	result := make([]domain.WaterLog, len(models))

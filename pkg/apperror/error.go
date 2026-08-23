@@ -3,6 +3,7 @@ package apperror
 import (
 	"errors"
 	"net/http"
+	"strings"
 
 	"gorm.io/gorm"
 
@@ -79,9 +80,54 @@ func FromDomain(err error) *AppError {
 		return BadRequest("Invalid ID format", err)
 	case errors.Is(err, gorm.ErrRecordNotFound):
 		return NotFound("Resource", err)
+	case isMasterDataViolation(err):
+		// ค่าที่ผู้ใช้ส่งมาไม่มีใน master data — เป็นความผิดของ request
+		// ไม่ใช่ของระบบ ตอบ 400 พร้อมบอกว่าฟิลด์ไหน แทนที่จะเป็น 500
+		// ที่ผู้เรียกไล่สาเหตุไม่ได้เลย
+		return BadRequest(masterDataMessage(err), err)
 	default:
 		return Internal("An unexpected error occurred", err)
 	}
+}
+
+// fkToField แปลงชื่อ foreign key เป็นชื่อฟิลด์ที่ผู้เรียกรู้จัก
+//
+// ผูกกับชื่อ constraint ในไฟล์ migration โดยตรง — ถ้าเปลี่ยนชื่อ constraint
+// ต้องมาแก้ที่นี่ด้วย เทสต์ใน pkg/apperror ครอบไว้แล้ว
+var fkToField = map[string]string{
+	"fk_pets_species":     "species",
+	"fk_pets_gender":      "gender",
+	"fk_litter_logs_type": "type",
+}
+
+// isMasterDataViolation บอกว่า error นี้เกิดจากค่าที่ไม่มีใน master data ไหม
+//
+// ไม่ผูกกับ driver ของ PostgreSQL โดยตรงเพื่อไม่ให้ apperror ต้องรู้จัก pgx
+// — เทียบจากข้อความซึ่งมีชื่อ constraint อยู่เสมอ
+func isMasterDataViolation(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "foreign key constraint") {
+		return false
+	}
+	for name := range fkToField {
+		if strings.Contains(msg, name) {
+			return true
+		}
+	}
+	return false
+}
+
+func masterDataMessage(err error) string {
+	msg := err.Error()
+	for name, field := range fkToField {
+		if strings.Contains(msg, name) {
+			return field + ": ค่าที่ระบุไม่มีอยู่ในรายการที่ใช้ได้"
+		}
+	}
+	return "ค่าที่ระบุไม่มีอยู่ในรายการที่ใช้ได้"
 }
 
 // IsAppError checks if err is an *AppError.

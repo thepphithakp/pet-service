@@ -224,3 +224,16 @@ func signRequest(t *testing.T, req *http.Request, key *rsa.PrivateKey, user uuid
 	}
 	req.Header.Set("Authorization", "Bearer "+signed)
 }
+
+// doUnauthenticated ยิง request โดยไม่ใส่ Authorization header
+func doUnauthenticated(t *testing.T, app *fiber.App, method, path string) (int, []byte) {
+	t.Helper()
+	req := httptest.NewRequest(method, path, nil)
+	resp, err := app.Test(req, 10_000)
+	if err != nil {
+		t.Fatalf("ยิง request ไม่สำเร็จ: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	b, _ := io.ReadAll(resp.Body)
+	return resp.StatusCode, b
+}

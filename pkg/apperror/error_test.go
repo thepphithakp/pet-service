@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"testing"
 
 	"gorm.io/gorm"
@@ -70,5 +71,58 @@ func TestAppError_Unwrap(t *testing.T) {
 	}
 	if e.Error() != "พัง" {
 		t.Fatalf("Error() = %q", e.Error())
+	}
+}
+
+// TestFromDomain_MasterDataViolationIsBadRequest
+//
+// ค่าที่ผู้ใช้ส่งมาไม่มีใน master data เคยกลายเป็น 500 ซึ่งผู้เรียกไล่สาเหตุไม่ได้
+// และดูเหมือนระบบพัง ทั้งที่เป็นความผิดของ request
+//
+// เจอตอนเขียน authorization matrix — ส่ง species ที่ไม่มีจริงแล้วได้ 500
+func TestFromDomain_MasterDataViolationIsBadRequest(t *testing.T) {
+	cases := []struct {
+		name      string
+		err       error
+		wantField string
+	}{
+		{
+			"species ไม่มีในรายการ",
+			errors.New(`ERROR: insert or update on table "pets" violates foreign key constraint "fk_pets_species" (SQLSTATE 23503)`),
+			"species",
+		},
+		{
+			"gender ไม่มีในรายการ",
+			errors.New(`ERROR: insert or update on table "pets" violates foreign key constraint "fk_pets_gender" (SQLSTATE 23503)`),
+			"gender",
+		},
+		{
+			"litter type ไม่มีในรายการ",
+			errors.New(`ERROR: insert or update on table "litter_logs" violates foreign key constraint "fk_litter_logs_type" (SQLSTATE 23503)`),
+			"type",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := FromDomain(tc.err)
+			if got.Code != http.StatusBadRequest {
+				t.Errorf("status = %d ต้องเป็น 400", got.Code)
+			}
+			if !strings.Contains(got.Message, tc.wantField) {
+				t.Errorf("ข้อความ %q ต้องบอกว่าฟิลด์ %q ผิด", got.Message, tc.wantField)
+			}
+		})
+	}
+}
+
+// TestFromDomain_OtherFKViolationStaysInternal
+//
+// FK ที่ไม่ได้มาจากค่าที่ผู้ใช้เลือก (เช่น pet_id ที่ระบบใส่เอง)
+// ยังต้องเป็น 500 เพราะเป็นความผิดพลาดของระบบจริงๆ
+func TestFromDomain_OtherFKViolationStaysInternal(t *testing.T) {
+	err := errors.New(`ERROR: violates foreign key constraint "fk_litter_logs_pet" (SQLSTATE 23503)`)
+	if got := FromDomain(err); got.Code != http.StatusInternalServerError {
+		t.Errorf("status = %d ต้องเป็น 500", got.Code)
 	}
 }

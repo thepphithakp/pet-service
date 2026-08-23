@@ -14,8 +14,37 @@ jobs:
   test:
     name: Test & Lint
     runs-on: ubuntu-latest
+
+    # ⚠️ ต้องมี postgres ที่นี่ด้วย ไม่ใช่แค่ใน ci.yml
+    #
+    # เราทำงานบน main โดยตรง และ ci.yml ตั้ง branches-ignore: [main] ไว้
+    # แปลว่า integration test ไม่เคยรันบน CI เลยสำหรับงานที่ push ขึ้น main
+    # ซึ่งเป็นเส้นทางหลักที่ deploy ขึ้น production จริง
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: vertex
+          POSTGRES_PASSWORD: vertex
+          POSTGRES_DB: vertex
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U vertex"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 20
+
     steps:
       - uses: actions/checkout@v4
+
+      # SQL อยู่คนละ repo — ดึงมาเพื่อเตรียมฐานข้อมูลให้ integration test
+      - name: Checkout migrations
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/vertex-migrations
+          path: .migrations
+          token: ${{ secrets.MIGRATIONS_REPO_TOKEN || github.token }}
+
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
@@ -25,7 +54,9 @@ jobs:
           go mod tidy
           git diff --exit-code go.mod go.sum
       - name: go vet
-        run: go vet ./...
+        run: |
+          go vet ./...
+          go vet -tags=integration ./...
       - name: Test (race)
         run: go test -race -count=1 ./...
       # ⚠️ .golangci.yml ใช้ config schema version 2 จึงต้องใช้ golangci-lint v2
@@ -39,6 +70,48 @@ jobs:
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@latest
           govulncheck ./...
+
+      - name: Flyway migrate
+        run: |
+          set -euo pipefail
+          docker run --rm --network host \
+            -v "$PWD/.migrations/pet/migration:/flyway/sql/migration:ro" \
+            -v "$PWD/.migrations/pet/codeowned:/flyway/sql/codeowned:ro" \
+            -v "$PWD/.migrations/pet/seed:/flyway/sql/seed:ro" \
+            -e FLYWAY_URL=jdbc:postgresql://localhost:5432/vertex \
+            -e FLYWAY_USER=vertex -e FLYWAY_PASSWORD=vertex \
+            -e FLYWAY_SCHEMAS=pet -e FLYWAY_DEFAULT_SCHEMA=pet \
+            -e FLYWAY_LOCATIONS=filesystem:/flyway/sql/migration,filesystem:/flyway/sql/codeowned,filesystem:/flyway/sql/seed \
+            -e FLYWAY_FAIL_ON_MISSING_LOCATIONS=true \
+            -e FLYWAY_CLEAN_DISABLED=true \
+            flyway/flyway:11-alpine migrate
+
+      # gate ที่สำคัญที่สุดก่อนขึ้น production
+      #
+      # ครอบ schema ตรงกับ GORM model, authorization matrix, outbox,
+      # pagination และ avatar — ทั้งหมดต้องผ่านก่อนถึงจะ build image
+      - name: Integration test
+        env:
+          TEST_DATABASE_URL: postgres://vertex:vertex@localhost:5432/vertex?sslmode=disable&search_path=pet
+        run: |
+          set -euo pipefail
+          go test -race -count=1 -tags=integration -coverpkg=./... -coverprofile=coverage.out ./...
+
+      # coverage ต้องไม่ต่ำกว่าเพดานล่าง
+      #
+      # ⚠️ ต้องใช้ -coverpkg=./... ตอนวัด ไม่งั้นตัวเลขจะต่ำกว่าความจริงมาก
+      #    เพราะ integration test อยู่ใน package bootstrap แต่เรียกโค้ดใน
+      #    repository/application ซึ่ง Go ไม่นับให้ถ้าไม่ระบุ
+      #    (วัดแบบไม่ใส่ได้ 41.7% แบบใส่ได้ 71.9% จากโค้ดชุดเดียวกัน)
+      - name: Coverage gate
+        env:
+          MIN_COVERAGE: "70"
+        run: |
+          set -euo pipefail
+          pct=$(go tool cover -func=coverage.out | tail -1 | grep -oE '[0-9]+\.[0-9]+')
+          echo "coverage = ${pct}%  (เพดานล่าง ${MIN_COVERAGE}%)"
+          awk -v got="$pct" -v min="$MIN_COVERAGE" \
+            'BEGIN { if (got + 0 < min + 0) { print "::error::coverage ต่ำกว่าเพดานล่าง"; exit 1 } }'
 
   build-and-push:
     needs: test
@@ -81,6 +154,22 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      # สแกน image ที่จะ deploy จริง ไม่ใช่แค่ dependency ใน go.mod
+      #
+      # govulncheck ครอบเฉพาะโค้ด Go ส่วน Trivy เห็น base image และ
+      # ไลบรารีระบบที่ติดมาด้วย ซึ่ง govulncheck มองไม่เห็น
+      #
+      # นับเฉพาะ CRITICAL/HIGH ที่มีทางแก้แล้ว (ignore-unfixed)
+      # ไม่งั้น CVE ที่ยังไม่มี patch จะทำให้ deploy ไม่ได้ทั้งที่ทำอะไรไม่ได้
+      - name: Trivy scan
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${{ github.sha }}
+          format: table
+          exit-code: "1"
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
 
 
   deploy:

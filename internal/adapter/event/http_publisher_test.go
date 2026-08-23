@@ -124,3 +124,71 @@ func TestPublish_NoTokenConfigured(t *testing.T) {
 		t.Errorf("ไม่ได้ตั้ง token ต้องไม่ส่ง header มา: %q", got[0].token)
 	}
 }
+
+// TestSend_ReturnsErrorUnlikePublish
+//
+// outbox worker ใช้ Send เพราะต้องรู้ว่าสำเร็จไหมจึงจะ mark ว่าส่งแล้วได้
+// ต่างจาก Publish ที่กลืน error ทิ้ง
+func TestSend_ReturnsErrorUnlikePublish(t *testing.T) {
+	cases := []struct {
+		name    string
+		status  int
+		wantErr bool
+	}{
+		{"201 = สำเร็จ", http.StatusCreated, false},
+		{"200 = สำเร็จ (event ซ้ำ)", http.StatusOK, false},
+		{"401 = ล้มเหลว", http.StatusUnauthorized, true},
+		{"500 = ล้มเหลว", http.StatusInternalServerError, true},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(tc.status)
+			}))
+			defer srv.Close()
+
+			p := NewHTTPEventPublisher(srv.URL, "tok")
+			err := p.Send(context.Background(), port.EventLog{EventType: "x", Action: "y"}, "key-1")
+
+			if tc.wantErr && err == nil {
+				t.Error("ต้องคืน error เพื่อให้ worker รู้ว่าต้อง retry")
+			}
+			if !tc.wantErr && err != nil {
+				t.Errorf("ไม่ควร error: %v", err)
+			}
+		})
+	}
+}
+
+// TestSend_UsesGivenIdempotencyKey
+//
+// worker ส่งคีย์เดิมทุกครั้งที่ retry ถ้า Send ไปสร้างใหม่เองจะกลายเป็น
+// event ซ้ำที่ปลายทาง
+func TestSend_UsesGivenIdempotencyKey(t *testing.T) {
+	var got string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		var body map[string]any
+		_ = json.Unmarshal(b, &body)
+		got, _ = body["idempotencyKey"].(string)
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer srv.Close()
+
+	p := NewHTTPEventPublisher(srv.URL, "tok")
+	if err := p.Send(context.Background(), port.EventLog{EventType: "x", Action: "y"}, "คีย์เดิม"); err != nil {
+		t.Fatalf("ไม่ควร error: %v", err)
+	}
+	if got != "คีย์เดิม" {
+		t.Errorf("idempotencyKey = %q ต้องเป็นค่าที่ส่งเข้ามา", got)
+	}
+}
+
+// TestUnexpectedStatusError_Message
+func TestUnexpectedStatusError_Message(t *testing.T) {
+	err := &unexpectedStatusError{status: http.StatusBadGateway}
+	if err.Error() == "" {
+		t.Error("ข้อความ error ต้องไม่ว่าง")
+	}
+}

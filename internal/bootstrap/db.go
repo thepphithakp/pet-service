@@ -43,6 +43,10 @@ func NewDB(cfg config.DBConfig) (*gorm.DB, error) {
 //
 // gorm.DB ไม่มี Close() เอง ต้องดึง *sql.DB ที่อยู่ข้างในออกมาก่อน
 func CloseDB(db *gorm.DB) error {
+	// ถูกเรียกตอนปิดตัว — panic ตรงนี้จะกลบสาเหตุจริงที่ทำให้ปิด
+	if db == nil {
+		return nil
+	}
 	sqlDB, err := db.DB()
 	if err != nil {
 		return err

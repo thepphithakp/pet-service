@@ -65,7 +65,12 @@ func (s *WaterService) GetPageByPetID(ctx context.Context, petID uuid.UUID, page
 	if err := s.authz.Authorize(ctx, petID, ReqLogRead); err != nil {
 		return nil, false, err
 	}
-	return s.repo.FindPageByPetID(ctx, petID, page)
+	// normalize ที่ชั้นนี้ด้วย ไม่ใช่พึ่ง repository อย่างเดียว
+	//
+	// port เป็นสัญญาที่ผู้เรียกอ่าน — ถ้าเพดานซ่อนอยู่ใน repository
+	// ผู้เรียกจะไม่รู้ว่าขอ limit เท่าไรก็ได้ผลไม่เกินเท่าไร
+	// และ caller ที่ไม่ได้มาทาง HTTP handler จะไม่ผ่าน parseLogPage เลย
+	return s.repo.FindPageByPetID(ctx, petID, page.Normalize())
 }
 
 func (s *WaterService) Delete(ctx context.Context, petID, logID uuid.UUID) error {

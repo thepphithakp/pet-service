@@ -1415,8 +1415,33 @@ cursor เป็น `(date, id)` ไม่ใช่ `date` อย่างเด
 | | |
 |---|---|
 | ก่อนเฟสนี้ | 71.9% |
-| หลังเฟสนี้ | **76.5%** |
-| เพดานล่างที่ตั้งไว้ | 70% |
+| รอบแรก | 76.5% |
+| หลังถม repository layer | **83.9%** |
+| เพดานล่างที่ตั้งไว้ | 80% |
+
+**ทำไมไม่ไล่ให้ถึง 100%**
+
+ที่เหลือ ~16% แบ่งเป็นสองกลุ่มที่ต่างกันโดยสิ้นเชิง
+
+| ยังเหลือ 0% | ทำไมไม่ทำ |
+|---|---|
+| `main()` · `shutdown()` · `fatal()` | เป็น wiring กับ `os.Exit` — พฤติกรรมจริงพิสูจน์ด้วย integration test และการ deploy อยู่แล้ว เขียนเทสต์ได้แต่จะยืนยันแค่ว่า "โค้ดเรียกฟังก์ชันนี้จริง" |
+| `SetupLogger()` · `truncate()` | ตัวตั้งค่า/ตัดสตริงบรรทัดเดียว |
+| `SetOutboxPending()` · `CountOutboxDelivery()` | wrapper ของ Prometheus ที่ไม่มีตรรกะ |
+| `PermissionFromDomain()` | mapper ตรงๆ ไม่มีเงื่อนไข |
+
+เทสต์ของกลุ่มนี้จะผูกกับ**วิธีเขียน**ไม่ใช่**พฤติกรรม** พอ refactor ทีก็แดง
+ทั้งที่ระบบยังถูก — เป็นภาระที่ไม่ได้ความปลอดภัยเพิ่ม
+
+ส่วนที่**ถมไปแล้ว**คือกลุ่มที่พลาดแล้วเจ็บจริง: repository ทั้งชั้น
+(`caregiver.SetPermissions` ซึ่งเป็นโค้ดความปลอดภัย S-4, `pet.Save/Delete`,
+`litter.SaveBatch` ที่เป็นเส้นทาง offline sync, keyset pagination, outbox),
+`LitterService.CreateBatch`, `NewDB`/pool settings และ `Actor.HasRole`
+
+**บั๊กที่การถม coverage จับได้**
+
+`CloseDB(nil)` panic เพราะไม่มี nil guard — ถูกเรียกใน `shutdown()`
+ถ้าวันหนึ่ง `db` เป็น nil จะ panic ตอนปิดตัวแล้วกลบสาเหตุจริงที่ทำให้ปิด
 
 ⚠️ ต้องวัดด้วย `-coverpkg=./...` เสมอ — โค้ดชุดเดียวกันวัดแบบไม่ใส่ได้ **41.7%**
 เพราะ integration test อยู่ใน package `bootstrap` แต่เรียกโค้ดใน

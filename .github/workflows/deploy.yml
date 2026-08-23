@@ -105,7 +105,7 @@ jobs:
       #    (วัดแบบไม่ใส่ได้ 41.7% แบบใส่ได้ 71.9% จากโค้ดชุดเดียวกัน)
       - name: Coverage gate
         env:
-          MIN_COVERAGE: "70"
+          MIN_COVERAGE: "80"
         run: |
           set -euo pipefail
           pct=$(go tool cover -func=coverage.out | tail -1 | grep -oE '[0-9]+\.[0-9]+')

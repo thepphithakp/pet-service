@@ -31,7 +31,7 @@ func NewGORMLitterRepository(db *gorm.DB) *GORMLitterRepository {
 // ต่างจาก water ที่เรียงตาม date อยู่แล้ว
 func (r *GORMLitterRepository) FindByPetID(ctx context.Context, petID uuid.UUID) ([]domain.LitterLog, error) {
 	var models []model.Litter
-	if err := r.db.WithContext(ctx).
+	if err := dbFrom(ctx, r.db).
 		Where("pet_id = ?", petID).
 		Order("date desc, id desc").
 		Find(&models).Error; err != nil {
@@ -48,7 +48,7 @@ func (r *GORMLitterRepository) FindByPetID(ctx context.Context, petID uuid.UUID)
 func (r *GORMLitterRepository) Save(ctx context.Context, log *domain.LitterLog) (*domain.LitterLog, error) {
 	m := model.LitterFromDomain(*log)
 
-	tx := r.db.WithContext(ctx).
+	tx := dbFrom(ctx, r.db).
 		Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "id"}}, DoNothing: true}).
 		Create(&m)
 	if tx.Error != nil {
@@ -58,7 +58,7 @@ func (r *GORMLitterRepository) Save(ctx context.Context, log *domain.LitterLog) 
 	if tx.RowsAffected == 0 {
 		// มีแถวนี้อยู่แล้ว — ถ้าเป็นของสัตว์เลี้ยงตัวเดิม ถือว่าส่งซ้ำ คืนของเดิมไป
 		var existing model.Litter
-		err := r.db.WithContext(ctx).
+		err := dbFrom(ctx, r.db).
 			First(&existing, "id = ? AND pet_id = ?", m.ID, m.PetID).Error
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			// id ไปชนรายการของสัตว์เลี้ยงตัวอื่น — บอกให้ชัดแทนที่จะเป็น 500
@@ -82,7 +82,7 @@ func (r *GORMLitterRepository) SaveBatch(ctx context.Context, logs []domain.Litt
 	}
 	// batch เป็นเส้นทาง offline sync ที่ส่งซ้ำได้อยู่แล้ว จึงต้อง idempotent
 	// เหมือนกัน ไม่งั้น sync รอบที่สองจะล้มทั้งชุดเพราะรายการเดียวที่ซ้ำ
-	if err := r.db.WithContext(ctx).
+	if err := dbFrom(ctx, r.db).
 		Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "id"}}, DoNothing: true}).
 		Create(&models).Error; err != nil {
 		return nil, err
@@ -98,7 +98,7 @@ func (r *GORMLitterRepository) SaveBatch(ctx context.Context, logs []domain.Litt
 //
 // เดิมไม่เช็ค pet_id ทำให้ยิง DELETE /pets/<ของตัวเอง>/litter-logs/<log ของคนอื่น> ได้
 func (r *GORMLitterRepository) Delete(ctx context.Context, petID, logID uuid.UUID) error {
-	result := r.db.WithContext(ctx).Delete(&model.Litter{}, "id = ? AND pet_id = ?", logID, petID)
+	result := dbFrom(ctx, r.db).Delete(&model.Litter{}, "id = ? AND pet_id = ?", logID, petID)
 	if result.Error != nil {
 		return result.Error
 	}
@@ -113,7 +113,7 @@ func (r *GORMLitterRepository) Delete(ctx context.Context, petID, logID uuid.UUI
 func (r *GORMLitterRepository) FindPageByPetID(ctx context.Context, petID uuid.UUID, page domain.LogPage) ([]domain.LitterLog, bool, error) {
 	page = page.Normalize()
 
-	q := r.db.WithContext(ctx).Where("pet_id = ?", petID)
+	q := dbFrom(ctx, r.db).Where("pet_id = ?", petID)
 	if page.Cursor != nil {
 		q = q.Where("(date, id) < (?, ?)", page.Cursor.Date, page.Cursor.ID)
 	}

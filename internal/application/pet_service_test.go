@@ -13,7 +13,7 @@ import (
 // newPetSvc ประกอบ service พร้อม authorizer ที่ให้สิทธิ์ระดับที่ต้องการ
 func newPetSvc(repo *fakePetRepo, pub *fakePublisher, level domain.AccessLevel) *PetService {
 	repo.access = domain.PetAccess{Level: level}
-	return NewPetService(repo, pub, NewAuthorizer(repo, adminCaps()))
+	return NewPetService(repo, recorderFor(pub), NewAuthorizer(repo, adminCaps()))
 }
 
 func TestPetService_Create(t *testing.T) {

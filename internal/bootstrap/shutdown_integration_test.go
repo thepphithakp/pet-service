@@ -26,7 +26,7 @@ import (
 func TestGracefulShutdown_NoDroppedRequests(t *testing.T) {
 	db := openTestDB(t)
 	key, _ := rsa.GenerateKey(rand.Reader, 2048)
-	app, health, publisher := NewApp(db, config.Config{Port: "0"}, middleware.AuthConfig{
+	app, health, publisher, _ := NewApp(db, config.Config{Port: "0"}, middleware.AuthConfig{
 		PublicKeys: []*rsa.PublicKey{&key.PublicKey},
 	})
 
@@ -106,7 +106,7 @@ func TestGracefulShutdown_NoDroppedRequests(t *testing.T) {
 func TestPublisherDrain_RespectsTimeout(t *testing.T) {
 	db := openTestDB(t)
 	key, _ := rsa.GenerateKey(rand.Reader, 2048)
-	_, _, publisher := NewApp(db, config.Config{Port: "0"}, middleware.AuthConfig{
+	_, _, publisher, _ := NewApp(db, config.Config{Port: "0"}, middleware.AuthConfig{
 		PublicKeys: []*rsa.PublicKey{&key.PublicKey},
 	})
 

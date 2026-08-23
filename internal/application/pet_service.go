@@ -11,17 +11,17 @@ import (
 
 // PetService implements port.PetUseCase.
 type PetService struct {
-	repo           port.PetRepository
-	eventPublisher port.EventPublisher
-	authz          *Authorizer
+	repo   port.PetRepository
+	events *EventRecorder
+	authz  *Authorizer
 }
 
 // NewPetService creates a new PetService.
-func NewPetService(repo port.PetRepository, eventPublisher port.EventPublisher, authz *Authorizer) *PetService {
+func NewPetService(repo port.PetRepository, events *EventRecorder, authz *Authorizer) *PetService {
 	return &PetService{
-		repo:           repo,
-		eventPublisher: eventPublisher,
-		authz:          authz,
+		repo:   repo,
+		events: events,
+		authz:  authz,
 	}
 }
 
@@ -74,10 +74,16 @@ func (s *PetService) Create(ctx context.Context, pet *domain.Pet, ownerID uuid.U
 	pet.ID = uuid.New()
 	pet.OwnerID = ownerID
 
-	created, err := s.repo.Save(ctx, pet)
-	if err == nil && s.eventPublisher != nil {
-		actor, _ := domain.ActorFromContext(ctx)
-		s.eventPublisher.Publish(ctx, port.EventLog{
+	var created *domain.Pet
+	err := s.events.Record(ctx, func(txCtx context.Context) ([]port.EventLog, error) {
+		var err error
+		created, err = s.repo.Save(txCtx, pet)
+		if err != nil {
+			return nil, err
+		}
+
+		actor, _ := domain.ActorFromContext(txCtx)
+		return []port.EventLog{{
 			EventType:     "PetProfile",
 			Action:        "Pet Created",
 			ActorID:       ownerID.String(),
@@ -88,9 +94,12 @@ func (s *PetService) Create(ctx context.Context, pet *domain.Pet, ownerID uuid.U
 				"name":    pet.Name,
 				"species": pet.Species,
 			},
-		})
+		}}, nil
+	})
+	if err != nil {
+		return nil, err
 	}
-	return created, err
+	return created, nil
 }
 
 func (s *PetService) Update(ctx context.Context, id uuid.UUID, incoming *domain.Pet) (*domain.Pet, error) {
@@ -145,12 +154,18 @@ func (s *PetService) Update(ctx context.Context, id uuid.UUID, incoming *domain.
 		existing.UpdatedBy = &uid
 	}
 
-	updatedPet, err := s.repo.Update(ctx, existing)
-	if err == nil && s.eventPublisher != nil {
+	var updatedPet *domain.Pet
+	err = s.events.Record(ctx, func(txCtx context.Context) ([]port.EventLog, error) {
+		var err error
+		updatedPet, err = s.repo.Update(txCtx, existing)
+		if err != nil {
+			return nil, err
+		}
+
 		// C-2: เดิมใส่ OwnerUsername (username ของ "เจ้าของ") ลงในช่อง ActorID
 		// ทำให้ audit trail บอกไม่ได้ว่าใครเป็นคนแก้จริง
-		actor, _ := domain.ActorFromContext(ctx)
-		s.eventPublisher.Publish(ctx, port.EventLog{
+		actor, _ := domain.ActorFromContext(txCtx)
+		return []port.EventLog{{
 			EventType:     "PetProfile",
 			Action:        "Pet Updated",
 			ActorID:       actor.UserID.String(),
@@ -160,9 +175,12 @@ func (s *PetService) Update(ctx context.Context, id uuid.UUID, incoming *domain.
 			Payload: map[string]interface{}{
 				"name": updatedPet.Name,
 			},
-		})
+		}}, nil
+	})
+	if err != nil {
+		return nil, err
 	}
-	return updatedPet, err
+	return updatedPet, nil
 }
 
 func (s *PetService) Delete(ctx context.Context, id uuid.UUID) error {
@@ -173,10 +191,13 @@ func (s *PetService) Delete(ctx context.Context, id uuid.UUID) error {
 	if err != nil {
 		return err
 	}
-	err = s.repo.Delete(ctx, id)
-	if err == nil && s.eventPublisher != nil {
-		actor, _ := domain.ActorFromContext(ctx)
-		s.eventPublisher.Publish(ctx, port.EventLog{
+	err = s.events.Record(ctx, func(txCtx context.Context) ([]port.EventLog, error) {
+		if err := s.repo.Delete(txCtx, id); err != nil {
+			return nil, err
+		}
+
+		actor, _ := domain.ActorFromContext(txCtx)
+		return []port.EventLog{{
 			EventType:     "PetProfile",
 			Action:        "Pet Deleted",
 			ActorID:       actor.UserID.String(),
@@ -186,7 +207,7 @@ func (s *PetService) Delete(ctx context.Context, id uuid.UUID) error {
 			Payload: map[string]interface{}{
 				"name": existing.Name,
 			},
-		})
-	}
+		}}, nil
+	})
 	return err
 }

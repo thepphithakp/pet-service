@@ -10,13 +10,13 @@ import (
 )
 
 type WaterService struct {
-	repo           port.WaterRepository
-	eventPublisher port.EventPublisher
-	authz          *Authorizer
+	repo   port.WaterRepository
+	events *EventRecorder
+	authz  *Authorizer
 }
 
-func NewWaterService(repo port.WaterRepository, eventPublisher port.EventPublisher, authz *Authorizer) *WaterService {
-	return &WaterService{repo: repo, eventPublisher: eventPublisher, authz: authz}
+func NewWaterService(repo port.WaterRepository, events *EventRecorder, authz *Authorizer) *WaterService {
+	return &WaterService{repo: repo, events: events, authz: authz}
 }
 
 func (s *WaterService) Create(ctx context.Context, log *domain.WaterLog) (*domain.WaterLog, error) {
@@ -26,17 +26,16 @@ func (s *WaterService) Create(ctx context.Context, log *domain.WaterLog) (*domai
 	if log.ID == uuid.Nil {
 		log.ID = uuid.New()
 	}
-	created, err := s.repo.Save(ctx, log)
-	if err == nil && s.eventPublisher != nil {
-		actorID := ""
-		actorUsername := ""
-		if log.CreatedBy != nil {
-			actorID = *log.CreatedBy
+	var created *domain.WaterLog
+	err := s.events.Record(ctx, func(txCtx context.Context) ([]port.EventLog, error) {
+		var err error
+		created, err = s.repo.Save(txCtx, log)
+		if err != nil {
+			return nil, err
 		}
-		if log.CreatedByUsername != nil {
-			actorUsername = *log.CreatedByUsername
-		}
-		s.eventPublisher.Publish(ctx, port.EventLog{
+
+		actorID, actorUsername := actorFrom(log.CreatedBy, log.CreatedByUsername)
+		return []port.EventLog{{
 			EventType:     "WaterLog",
 			Action:        "Water Intake Logged",
 			ActorID:       actorID,
@@ -46,9 +45,12 @@ func (s *WaterService) Create(ctx context.Context, log *domain.WaterLog) (*domai
 			Payload: map[string]interface{}{
 				"amount": log.Amount,
 			},
-		})
+		}}, nil
+	})
+	if err != nil {
+		return nil, err
 	}
-	return created, err
+	return created, nil
 }
 
 func (s *WaterService) GetByPetID(ctx context.Context, petID uuid.UUID) ([]domain.WaterLog, error) {

@@ -23,7 +23,7 @@ func NewGORMCaregiverRepository(db *gorm.DB) *GORMCaregiverRepository {
 
 func (r *GORMCaregiverRepository) FindByPetID(ctx context.Context, petID uuid.UUID) ([]domain.PetCaregiver, error) {
 	var models []model.Caregiver
-	if err := r.db.WithContext(ctx).Preload("Permissions").Where("pet_id = ?", petID).Find(&models).Error; err != nil {
+	if err := dbFrom(ctx, r.db).Preload("Permissions").Where("pet_id = ?", petID).Find(&models).Error; err != nil {
 		return nil, err
 	}
 	result := make([]domain.PetCaregiver, len(models))
@@ -35,7 +35,7 @@ func (r *GORMCaregiverRepository) FindByPetID(ctx context.Context, petID uuid.UU
 
 func (r *GORMCaregiverRepository) FindByID(ctx context.Context, id uuid.UUID) (*domain.PetCaregiver, error) {
 	var m model.Caregiver
-	err := r.db.WithContext(ctx).Preload("Permissions").First(&m, "id = ?", id).Error
+	err := dbFrom(ctx, r.db).Preload("Permissions").First(&m, "id = ?", id).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, domain.ErrCaregiverNotFound
@@ -52,7 +52,7 @@ func (r *GORMCaregiverRepository) Save(ctx context.Context, caregiver *domain.Pe
 		PetID:  caregiver.PetID,
 		UserID: caregiver.UserID,
 	}
-	if err := r.db.WithContext(ctx).Create(&m).Error; err != nil {
+	if err := dbFrom(ctx, r.db).Create(&m).Error; err != nil {
 		// C-4: ชน partial unique index idx_pet_user_active → เดิมคืน pg error ดิบเป็น 500
 		if isUniqueViolation(err) {
 			return nil, domain.ErrCaregiverDuplicate
@@ -69,7 +69,7 @@ func (r *GORMCaregiverRepository) Save(ctx context.Context, caregiver *domain.Pe
 // pet_permissions (ตาราง master) ให้ด้วย ทำให้ client แก้ master data ได้ (S-4)
 // การเขียน join table ตรงๆ แตะเฉพาะความสัมพันธ์ ไม่แตะ master เลย
 func (r *GORMCaregiverRepository) SetPermissions(ctx context.Context, caregiverID uuid.UUID, permissionIDs []string) (*domain.PetCaregiver, error) {
-	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := dbFrom(ctx, r.db).Transaction(func(tx *gorm.DB) error {
 		if err := tx.First(&model.Caregiver{}, "id = ?", caregiverID).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return domain.ErrCaregiverNotFound
@@ -98,7 +98,7 @@ func (r *GORMCaregiverRepository) SetPermissions(ctx context.Context, caregiverI
 }
 
 func (r *GORMCaregiverRepository) Delete(ctx context.Context, id uuid.UUID) error {
-	return r.db.WithContext(ctx).Delete(&model.Caregiver{}, "id = ?", id).Error
+	return dbFrom(ctx, r.db).Delete(&model.Caregiver{}, "id = ?", id).Error
 }
 
 // GORMPermissionRepository implements port.PermissionRepository.
@@ -112,7 +112,7 @@ func NewGORMPermissionRepository(db *gorm.DB) *GORMPermissionRepository {
 
 func (r *GORMPermissionRepository) FindAll(ctx context.Context) ([]domain.PetPermission, error) {
 	var models []model.Permission
-	if err := r.db.WithContext(ctx).Find(&models).Error; err != nil {
+	if err := dbFrom(ctx, r.db).Find(&models).Error; err != nil {
 		return nil, err
 	}
 	result := make([]domain.PetPermission, len(models))

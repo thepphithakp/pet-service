@@ -33,7 +33,7 @@ func paginationApp(t *testing.T, db *gorm.DB) (*fiber.App, *rsa.PrivateKey) {
 	if err != nil {
 		t.Fatalf("สร้างคีย์ไม่สำเร็จ: %v", err)
 	}
-	app, _, _ := NewApp(db, config.Config{Port: "0"},
+	app, _, _, _ := NewApp(db, config.Config{Port: "0"},
 		middleware.AuthConfig{PublicKeys: []*rsa.PublicKey{&key.PublicKey}})
 	return app, key
 }

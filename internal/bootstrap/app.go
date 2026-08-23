@@ -34,7 +34,7 @@ type handlers struct {
 }
 
 // wire ประกอบ repository → service → handler
-func wire(db *gorm.DB, cfg config.Config) (handlers, *event.HTTPEventPublisher) {
+func wire(db *gorm.DB, cfg config.Config) (handlers, *event.HTTPEventPublisher, *application.OutboxWorker) {
 	// Output adapters
 	petRepo := repository.NewGORMPetRepository(db)
 	caregiverRepo := repository.NewGORMCaregiverRepository(db)
@@ -45,28 +45,41 @@ func wire(db *gorm.DB, cfg config.Config) (handlers, *event.HTTPEventPublisher) 
 	masterDataRepo := repository.NewGORMMasterDataRepository(db)
 	eventPublisher := event.NewHTTPEventPublisher(cfg.EventServiceURL, cfg.EventIngestToken)
 
+	// outbox — event ถูกเขียนลง database ในทรานแซกชันเดียวกับข้อมูลธุรกิจ
+	// แล้วมี worker แยกมาส่งทีหลัง (ดู OutboxWorker)
+	outboxRepo := repository.NewGORMOutboxRepository(db)
+	txManager := repository.NewGORMTxManager(db)
+	eventRecorder := application.NewEventRecorder(txManager, outboxRepo)
+
 	// Authorizer ใช้ร่วมกันทุก service — บังคับสิทธิ์ที่ชั้น application
 	authz := application.NewAuthorizer(petRepo, capabilityRepo)
 
 	// Use cases
-	petService := application.NewPetService(petRepo, eventPublisher, authz)
+	petService := application.NewPetService(petRepo, eventRecorder, authz)
 	caregiverService := application.NewCaregiverService(caregiverRepo, permissionRepo, authz)
-	litterService := application.NewLitterService(litterRepo, eventPublisher, authz)
-	waterService := application.NewWaterService(waterRepo, eventPublisher, authz)
+	litterService := application.NewLitterService(litterRepo, eventRecorder, authz)
+	waterService := application.NewWaterService(waterRepo, eventRecorder, authz)
 	masterDataService := application.NewMasterDataService(masterDataRepo, permissionRepo, authz)
 
 	// Input adapters
+	worker := application.
+		NewOutboxWorker(outboxRepo, txManager, eventPublisher, cfg.OutboxInterval).
+		WithObserver(application.OutboxObserver{
+			SetPending: middleware.SetOutboxPending,
+			Delivery:   middleware.CountOutboxDelivery,
+		})
+
 	return handlers{
 		pet:        handler.NewPetHandler(petService, cfg.PetListIncludeAvatar),
 		caregiver:  handler.NewCaregiverHandler(caregiverService),
 		litter:     handler.NewLitterHandler(litterService),
 		water:      handler.NewWaterHandler(waterService),
 		masterData: handler.NewMasterDataHandler(masterDataService, masterDataService),
-	}, eventPublisher
+	}, eventPublisher, worker
 }
 
 // NewApp สร้าง fiber app ที่พร้อมรับ request
-func NewApp(db *gorm.DB, cfg config.Config, auth middleware.AuthConfig) (*fiber.App, *Health, *event.HTTPEventPublisher) {
+func NewApp(db *gorm.DB, cfg config.Config, auth middleware.AuthConfig) (*fiber.App, *Health, *event.HTTPEventPublisher, *application.OutboxWorker) {
 	app := fiber.New(fiber.Config{
 		BodyLimit:    bodyLimit,
 		ErrorHandler: middleware.ErrorHandler,
@@ -99,8 +112,8 @@ func NewApp(db *gorm.DB, cfg config.Config, auth middleware.AuthConfig) (*fiber.
 		},
 	}))
 
-	h, publisher := wire(db, cfg)
+	h, publisher, worker := wire(db, cfg)
 	health := NewHealth(db)
 	registerRoutes(app, h, auth, health)
-	return app, health, publisher
+	return app, health, publisher, worker
 }

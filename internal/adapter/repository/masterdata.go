@@ -108,7 +108,7 @@ func (r *GORMMasterDataRepository) FindAll(ctx context.Context, t domain.MasterD
 		return nil, err
 	}
 
-	q := r.db.WithContext(ctx).Table(m.table).Select(m.selectColumns())
+	q := dbFrom(ctx, r.db).Table(m.table).Select(m.selectColumns())
 	if !includeInactive {
 		q = q.Where("is_active")
 	}
@@ -132,7 +132,7 @@ func (r *GORMMasterDataRepository) FindByCode(ctx context.Context, t domain.Mast
 	}
 
 	var row masterDataRow
-	err = r.db.WithContext(ctx).Table(m.table).Select(m.selectColumns()).
+	err = dbFrom(ctx, r.db).Table(m.table).Select(m.selectColumns()).
 		Where("code = ?", code).Take(&row).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -162,7 +162,7 @@ func (r *GORMMasterDataRepository) Create(ctx context.Context, t domain.MasterDa
 		values["species_code"] = item.SpeciesCode
 	}
 
-	if err := r.db.WithContext(ctx).Table(m.table).Create(values).Error; err != nil {
+	if err := dbFrom(ctx, r.db).Table(m.table).Create(values).Error; err != nil {
 		if isUniqueViolation(err) {
 			return nil, domain.ErrMasterDataDuplicate
 		}
@@ -199,7 +199,7 @@ func (r *GORMMasterDataRepository) Update(ctx context.Context, t domain.MasterDa
 
 	// 🚫 จงใจไม่อัปเดต code — เป็น primary key ที่ข้อมูลอื่นอ้างอยู่
 	//    การเปลี่ยน code จะทำให้ข้อมูลเดิมชี้ไปที่ไม่มีอยู่
-	res := r.db.WithContext(ctx).Table(m.table).
+	res := dbFrom(ctx, r.db).Table(m.table).
 		Where("code = ? AND version = ?", item.Code, item.Version).
 		Updates(values)
 	if res.Error != nil {
@@ -237,7 +237,7 @@ func (r *GORMMasterDataRepository) CountUsage(ctx context.Context, t domain.Mast
 	}
 
 	var n int64
-	q := r.db.WithContext(ctx).Table(m.usageTable).Where(m.usageColumn+" = ?", match)
+	q := dbFrom(ctx, r.db).Table(m.usageTable).Where(m.usageColumn+" = ?", match)
 	if m.usageTable == "pets" || m.usageTable == "litter_logs" {
 		q = q.Where("deleted_at IS NULL")
 	}

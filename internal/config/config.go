@@ -24,6 +24,12 @@ type Config struct {
 	// ปิดแล้ว response ของหน้ารายการจะเล็กลงจากหลักเมกะไบต์เหลือไม่กี่กิโลไบต์
 	PetListIncludeAvatar bool
 
+	// OutboxInterval คือความถี่ที่ worker ตรวจ event ที่ค้างส่ง
+	//
+	// สั้นเกินไปจะ query ถี่โดยไม่ได้อะไร ยาวเกินไป event จะช้า
+	// 5 วินาทีทำให้ event ถึงปลายทางเร็วพอสำหรับ audit log
+	OutboxInterval time.Duration
+
 	// EventIngestToken คือ token ที่ event-service ใช้ยืนยันว่าผู้เรียกเป็น service
 	// ไม่ใช่ผู้ใช้ทั่วไป — ต้องเป็นค่าเดียวกับ EVENT_INGEST_TOKEN ฝั่งนั้น
 	//
@@ -160,6 +166,7 @@ func Load() (Config, error) {
 		EventIngestToken: os.Getenv("EVENT_INGEST_TOKEN"),
 		// default = true เพื่อไม่ให้แอปที่ใช้อยู่พังตอน deploy
 		PetListIncludeAvatar: envBool("PET_LIST_INCLUDE_AVATAR", true),
+		OutboxInterval:       envDuration("OUTBOX_INTERVAL", 5*time.Second),
 		Log: LogConfig{
 			Level: env("LOG_LEVEL", "info"),
 			Body:  os.Getenv("LOG_BODY") == "true",

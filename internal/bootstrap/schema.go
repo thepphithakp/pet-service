@@ -14,7 +14,7 @@ import (
 //
 // ⚠️ ต้องเพิ่มค่านี้ทุกครั้งที่เพิ่ม V__ ใหม่ที่โค้ดพึ่งพา
 // และห้ามเพิ่มถ้าโค้ดยังไม่ได้ใช้ schema นั้น (จะทำให้ deploy ไม่ผ่านโดยไม่จำเป็น)
-const RequiredSchemaVersion = 8
+const RequiredSchemaVersion = 10
 
 // ErrSchemaOutdated เกิดเมื่อ migration ยังไม่ถูกรันหรือรันไม่ครบ
 var ErrSchemaOutdated = errors.New("schema version ต่ำกว่าที่โค้ดต้องการ")

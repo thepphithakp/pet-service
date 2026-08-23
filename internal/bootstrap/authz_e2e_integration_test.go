@@ -38,7 +38,7 @@ func TestAuthorization_E2E(t *testing.T) {
 	cgID := seedCaregiver(t, db, petID, caregiver, "MANAGE_LITTER")
 	t.Cleanup(func() { db.Exec(`DELETE FROM pet_caregivers WHERE id = ?`, cgID) })
 
-	app, _, _ := NewApp(db, config.Config{Port: "0"}, middleware.AuthConfig{PublicKeys: []*rsa.PublicKey{&key.PublicKey}})
+	app, _, _, _ := NewApp(db, config.Config{Port: "0"}, middleware.AuthConfig{PublicKeys: []*rsa.PublicKey{&key.PublicKey}})
 
 	token := func(uid uuid.UUID, roles ...string) string {
 		claims := jwt.MapClaims{
@@ -146,7 +146,7 @@ func TestLogDelete_ScopedToPet(t *testing.T) {
 	db.Exec(`INSERT INTO litter_logs (id, pet_id, date, type, amount, created_at, updated_at, is_active)
 	         VALUES (?, ?, now(), 'Poop', 1, now(), now(), true)`, logB, petB)
 
-	app, _, _ := NewApp(db, config.Config{Port: "0"}, middleware.AuthConfig{PublicKeys: []*rsa.PublicKey{&key.PublicKey}})
+	app, _, _, _ := NewApp(db, config.Config{Port: "0"}, middleware.AuthConfig{PublicKeys: []*rsa.PublicKey{&key.PublicKey}})
 	tok, _ := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
 		"sub": userA.String(), "exp": time.Now().Add(time.Hour).Unix(),
 	}).SignedString(key)

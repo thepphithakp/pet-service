@@ -3,6 +3,7 @@ package application
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -113,10 +114,49 @@ func (f *fakePetRepo) Delete(_ context.Context, id uuid.UUID) error {
 	return f.saveErr
 }
 
-type fakePublisher struct{ events []port.EventLog }
+// fakePublisher จำลอง outbox — เก็บ event ที่ถูกบันทึกไว้ให้เทสต์ตรวจ
+//
+// ชื่อเดิมยังคงไว้เพื่อไม่ต้องแก้เทสต์ทุกไฟล์ แต่ตอนนี้เป็น outbox
+// เพราะ service เขียน event ลงตารางแทนการยิง HTTP ตรงๆ แล้ว
+type fakePublisher struct {
+	events     []port.EventLog
+	enqueueErr error
+}
 
-func (f *fakePublisher) Publish(_ context.Context, e port.EventLog) {
+func (f *fakePublisher) Enqueue(_ context.Context, e port.EventLog) error {
+	if f.enqueueErr != nil {
+		return f.enqueueErr
+	}
 	f.events = append(f.events, e)
+	return nil
+}
+
+func (f *fakePublisher) ClaimPending(context.Context, int) ([]port.OutboxEvent, error) {
+	return nil, nil
+}
+func (f *fakePublisher) MarkPublished(context.Context, uuid.UUID) error { return nil }
+func (f *fakePublisher) MarkFailed(context.Context, uuid.UUID, string, time.Time) error {
+	return nil
+}
+func (f *fakePublisher) CountPending(context.Context) (int64, error) { return 0, nil }
+func (f *fakePublisher) DeletePublishedBefore(context.Context, time.Time) (int64, error) {
+	return 0, nil
+}
+
+// passthroughTx รัน fn ตรงๆ โดยไม่เปิด transaction จริง
+//
+// เทสต์ระดับ unit ไม่ต้องการ database — สิ่งที่ต้องพิสูจน์คือ service
+// เรียก work กับ enqueue ครบและตามลำดับ ส่วนความเป็น atomic จริง
+// พิสูจน์ด้วย integration test ที่มี PostgreSQL
+type passthroughTx struct{}
+
+func (passthroughTx) Within(ctx context.Context, fn func(context.Context) error) error {
+	return fn(ctx)
+}
+
+// recorderFor ประกอบ EventRecorder จาก fake
+func recorderFor(pub *fakePublisher) *EventRecorder {
+	return NewEventRecorder(passthroughTx{}, pub)
 }
 
 func strp(s string) *string { return &s }

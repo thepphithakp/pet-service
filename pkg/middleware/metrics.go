@@ -39,10 +39,37 @@ var (
 			Help: "จำนวน request ที่กำลังทำงานอยู่",
 		},
 	)
+
+	// outboxPending คือจำนวน event ที่ยังส่งไม่สำเร็จ
+	//
+	// ค่านี้ควรวนกลับมาใกล้ 0 เสมอ ถ้าค้างสูงต่อเนื่องแปลว่า event-service
+	// มีปัญหาหรือ worker ไม่ทำงาน — ตั้ง alert จากค่านี้ได้เลย
+	outboxPending = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "outbox_pending_count",
+			Help: "จำนวน event ใน outbox ที่ยังส่งไม่สำเร็จ",
+		},
+	)
+
+	// outboxDeliveries นับผลการส่งแยกตามผลลัพธ์
+	outboxDeliveries = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "outbox_deliveries_total",
+			Help: "จำนวนครั้งที่พยายามส่ง event แยกตามผลลัพธ์",
+		},
+		[]string{"result"},
+	)
 )
 
+// SetOutboxPending อัปเดตจำนวน event ที่ค้างอยู่
+func SetOutboxPending(n int64) { outboxPending.Set(float64(n)) }
+
+// CountOutboxDelivery นับผลการส่งหนึ่งครั้ง — result เป็น "success" หรือ "failure"
+func CountOutboxDelivery(result string) { outboxDeliveries.WithLabelValues(result).Inc() }
+
 func init() {
-	prometheus.MustRegister(httpRequestsTotal, httpRequestDuration, httpRequestsInFlight)
+	prometheus.MustRegister(httpRequestsTotal, httpRequestDuration, httpRequestsInFlight,
+		outboxPending, outboxDeliveries)
 }
 
 // NewMetrics คืน middleware ที่เก็บ metric ของทุก request

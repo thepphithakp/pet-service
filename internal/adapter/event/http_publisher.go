@@ -91,6 +91,14 @@ func (p *HTTPEventPublisher) Publish(ctx context.Context, event port.EventLog) {
 	}()
 }
 
+// Send ยิง event ออกไปแล้วคืน error ให้ผู้เรียกตัดสินใจ
+//
+// ต่างจาก Publish ที่เป็น fire-and-forget และกลืน error
+// outbox worker ใช้ตัวนี้เพราะต้องรู้ว่าสำเร็จไหมจึงจะ mark ว่าส่งแล้วได้
+func (p *HTTPEventPublisher) Send(ctx context.Context, event port.EventLog, idempotencyKey string) error {
+	return p.send(ctx, event, idempotencyKey)
+}
+
 func (p *HTTPEventPublisher) send(ctx context.Context, event port.EventLog, idempotencyKey string) error {
 	body, err := json.Marshal(struct {
 		port.EventLog

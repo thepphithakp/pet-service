@@ -58,11 +58,18 @@ func main() {
 		fatal("ตั้งค่า JWT ไม่สำเร็จ", "error", err)
 	}
 
-	app, health, publisher := bootstrap.NewApp(db, cfg, auth)
+	app, health, publisher, outbox := bootstrap.NewApp(db, cfg, auth)
 
 	// รับ signal ก่อนเริ่ม listen เพื่อไม่ให้พลาด SIGTERM ที่มาเร็ว
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
+
+	// outbox worker ส่ง event ที่ค้างอยู่
+	//
+	// เริ่มก่อนรับ request เพื่อให้ event ที่ค้างจาก pod ก่อนหน้าถูกส่งทันที
+	// ไม่ต้องรอให้มีใครมาเรียก API ก่อน
+	outboxCtx, stopOutbox := context.WithCancel(context.Background())
+	go outbox.Run(outboxCtx)
 
 	go func() {
 		slog.Info("pet-service กำลังรับ request", "port", cfg.Port)
@@ -73,6 +80,8 @@ func main() {
 	}()
 
 	<-stop
+	// หยุด worker ก่อน เพื่อไม่ให้จับงานใหม่ระหว่างที่กำลังปิดตัว
+	stopOutbox()
 	shutdown(app, health, publisher, db, cfg.Shutdown)
 }
 

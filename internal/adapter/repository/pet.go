@@ -36,7 +36,7 @@ type accessRow struct {
 // คืน AccessNone ทั้งกรณีไม่มีสิทธิ์และกรณีไม่มีสัตว์เลี้ยงอยู่จริง
 func (r *GORMPetRepository) FindAccess(ctx context.Context, petID, userID uuid.UUID) (domain.PetAccess, error) {
 	var row accessRow
-	err := r.db.WithContext(ctx).Raw(`
+	err := dbFrom(ctx, r.db).Raw(`
 		SELECT
 		    (p.owner_id = @userID)  AS is_owner,
 		    (c.id IS NOT NULL)      AS is_caregiver,
@@ -71,7 +71,7 @@ func (r *GORMPetRepository) FindAccess(ctx context.Context, petID, userID uuid.U
 
 func (r *GORMPetRepository) FindAllForUser(ctx context.Context, userID uuid.UUID) ([]domain.Pet, error) {
 	var models []model.Pet
-	err := r.db.WithContext(ctx).
+	err := dbFrom(ctx, r.db).
 		Preload("Caregivers.Permissions").
 		Where("owner_id = ?", userID).
 		Or("EXISTS (SELECT 1 FROM pet_caregivers WHERE pet_caregivers.pet_id = pets.id AND pet_caregivers.user_id = ? AND pet_caregivers.deleted_at IS NULL)", userID).
@@ -88,7 +88,7 @@ func (r *GORMPetRepository) FindAllForUser(ctx context.Context, userID uuid.UUID
 
 func (r *GORMPetRepository) FindAll(ctx context.Context) ([]domain.Pet, error) {
 	var models []model.Pet
-	err := r.db.WithContext(ctx).
+	err := dbFrom(ctx, r.db).
 		Preload("Caregivers.Permissions").
 		Find(&models).Error
 	if err != nil {
@@ -103,7 +103,7 @@ func (r *GORMPetRepository) FindAll(ctx context.Context) ([]domain.Pet, error) {
 
 func (r *GORMPetRepository) FindByID(ctx context.Context, id uuid.UUID) (*domain.Pet, error) {
 	var m model.Pet
-	err := r.db.WithContext(ctx).Preload("Caregivers.Permissions").First(&m, "id = ?", id).Error
+	err := dbFrom(ctx, r.db).Preload("Caregivers.Permissions").First(&m, "id = ?", id).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, domain.ErrPetNotFound
@@ -116,7 +116,7 @@ func (r *GORMPetRepository) FindByID(ctx context.Context, id uuid.UUID) (*domain
 
 func (r *GORMPetRepository) Save(ctx context.Context, pet *domain.Pet) (*domain.Pet, error) {
 	m := model.PetFromDomain(*pet)
-	if err := r.db.WithContext(ctx).Create(&m).Error; err != nil {
+	if err := dbFrom(ctx, r.db).Create(&m).Error; err != nil {
 		return nil, err
 	}
 	created := m.ToDomain()
@@ -125,7 +125,7 @@ func (r *GORMPetRepository) Save(ctx context.Context, pet *domain.Pet) (*domain.
 
 func (r *GORMPetRepository) Update(ctx context.Context, pet *domain.Pet) (*domain.Pet, error) {
 	m := model.PetFromDomain(*pet)
-	if err := r.db.WithContext(ctx).Save(&m).Error; err != nil {
+	if err := dbFrom(ctx, r.db).Save(&m).Error; err != nil {
 		return nil, err
 	}
 	updated := m.ToDomain()
@@ -133,7 +133,7 @@ func (r *GORMPetRepository) Update(ctx context.Context, pet *domain.Pet) (*domai
 }
 
 func (r *GORMPetRepository) Delete(ctx context.Context, id uuid.UUID) error {
-	return r.db.WithContext(ctx).Delete(&model.Pet{}, "id = ?", id).Error
+	return dbFrom(ctx, r.db).Delete(&model.Pet{}, "id = ?", id).Error
 }
 
 // FindAllForUserSummary ดึงรายการสัตว์เลี้ยงโดยไม่ลาก avatar_data มาด้วย
@@ -143,7 +143,7 @@ func (r *GORMPetRepository) Delete(ctx context.Context, id uuid.UUID) error {
 // ทั้งที่หน้ารายการแสดงรูปเล็กๆ
 func (r *GORMPetRepository) FindAllForUserSummary(ctx context.Context, userID uuid.UUID) ([]domain.PetSummary, error) {
 	var models []model.PetSummary
-	err := r.db.WithContext(ctx).
+	err := dbFrom(ctx, r.db).
 		Model(&model.Pet{}).
 		Select(model.SummaryColumns()).
 		Preload("Caregivers.Permissions").
@@ -158,7 +158,7 @@ func (r *GORMPetRepository) FindAllForUserSummary(ctx context.Context, userID uu
 
 func (r *GORMPetRepository) FindAllSummary(ctx context.Context) ([]domain.PetSummary, error) {
 	var models []model.PetSummary
-	err := r.db.WithContext(ctx).
+	err := dbFrom(ctx, r.db).
 		Model(&model.Pet{}).
 		Select(model.SummaryColumns()).
 		Preload("Caregivers.Permissions").
@@ -185,7 +185,7 @@ func (r *GORMPetRepository) FindAvatar(ctx context.Context, petID uuid.UUID) (*d
 	var row struct {
 		AvatarData []byte
 	}
-	err := r.db.WithContext(ctx).
+	err := dbFrom(ctx, r.db).
 		Model(&model.Pet{}).
 		Select("avatar_data").
 		Where("id = ?", petID).

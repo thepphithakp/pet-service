@@ -71,7 +71,7 @@ func (r *GORMCapabilityRepository) load(ctx context.Context) (map[string]map[str
 		RoleCode   string
 		Capability string
 	}
-	if err := r.db.WithContext(ctx).
+	if err := dbFrom(ctx, r.db).
 		Table("role_capabilities").
 		Select("role_code", "capability").
 		Scan(&rows).Error; err != nil {

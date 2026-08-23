@@ -11,16 +11,16 @@ import (
 
 // LitterService implements port.LitterUseCase.
 type LitterService struct {
-	repo           port.LitterRepository
-	eventPublisher port.EventPublisher
-	authz          *Authorizer
+	repo   port.LitterRepository
+	events *EventRecorder
+	authz  *Authorizer
 }
 
-func NewLitterService(repo port.LitterRepository, eventPublisher port.EventPublisher, authz *Authorizer) *LitterService {
+func NewLitterService(repo port.LitterRepository, events *EventRecorder, authz *Authorizer) *LitterService {
 	return &LitterService{
-		repo:           repo,
-		eventPublisher: eventPublisher,
-		authz:          authz,
+		repo:   repo,
+		events: events,
+		authz:  authz,
 	}
 }
 
@@ -43,19 +43,27 @@ func (s *LitterService) Create(ctx context.Context, log *domain.LitterLog) (*dom
 	if err := s.authz.Authorize(ctx, log.PetID, ReqLitterWrite); err != nil {
 		return nil, err
 	}
-	log.ID = uuid.New()
+	// ⚠️ ต้องเช็ค Nil ก่อน ห้ามเขียนทับ
+	//
+	// แอปสร้าง UUID เองแล้วแสดงรายการทันทีก่อน POST จะกลับมา
+	// ถ้าเขียนทับ พอ refresh จะได้อีกแถวที่ id คนละตัว แอปเลยแสดงสองรายการ
+	// จากการบันทึกครั้งเดียว และกดลบรายการของตัวเองจะได้ 404
+	// (อาการเดียวกับที่เจอกับ water log เมื่อ 2026-08-23 — ตอนนั้นแก้แค่ water
+	//  แต่ litter ยังเขียนทับอยู่)
+	if log.ID == uuid.Nil {
+		log.ID = uuid.New()
+	}
 
-	created, err := s.repo.Save(ctx, log)
-	if err == nil && s.eventPublisher != nil {
-		actorID := ""
-		actorUsername := ""
-		if log.CreatedBy != nil {
-			actorID = *log.CreatedBy
+	var created *domain.LitterLog
+	err := s.events.Record(ctx, func(txCtx context.Context) ([]port.EventLog, error) {
+		var err error
+		created, err = s.repo.Save(txCtx, log)
+		if err != nil {
+			return nil, err
 		}
-		if log.CreatedByUsername != nil {
-			actorUsername = *log.CreatedByUsername
-		}
-		s.eventPublisher.Publish(ctx, port.EventLog{
+
+		actorID, actorUsername := actorFrom(log.CreatedBy, log.CreatedByUsername)
+		return []port.EventLog{{
 			EventType:     "LitterLog",
 			Action:        "Litter Log Added",
 			ActorID:       actorID,
@@ -66,7 +74,10 @@ func (s *LitterService) Create(ctx context.Context, log *domain.LitterLog) (*dom
 				"type":   log.Type,
 				"amount": log.Amount,
 			},
-		})
+		}}, nil
+	})
+	if err != nil {
+		return nil, err
 	}
 	return created, err
 }
@@ -92,18 +103,18 @@ func (s *LitterService) CreateBatch(ctx context.Context, logs []domain.LitterLog
 			logs[i].ID = uuid.New()
 		}
 	}
-	createdLogs, err := s.repo.SaveBatch(ctx, logs)
-	if err == nil && s.eventPublisher != nil {
+	var createdLogs []domain.LitterLog
+	err := s.events.Record(ctx, func(txCtx context.Context) ([]port.EventLog, error) {
+		var err error
+		createdLogs, err = s.repo.SaveBatch(txCtx, logs)
+		if err != nil {
+			return nil, err
+		}
+
+		events := make([]port.EventLog, 0, len(createdLogs))
 		for _, log := range createdLogs {
-			actorID := ""
-			actorUsername := ""
-			if log.CreatedBy != nil {
-				actorID = *log.CreatedBy
-			}
-			if log.CreatedByUsername != nil {
-				actorUsername = *log.CreatedByUsername
-			}
-			s.eventPublisher.Publish(ctx, port.EventLog{
+			actorID, actorUsername := actorFrom(log.CreatedBy, log.CreatedByUsername)
+			events = append(events, port.EventLog{
 				EventType:     "LitterLog",
 				Action:        "Litter Log Added",
 				ActorID:       actorID,
@@ -117,8 +128,12 @@ func (s *LitterService) CreateBatch(ctx context.Context, logs []domain.LitterLog
 				},
 			})
 		}
+		return events, nil
+	})
+	if err != nil {
+		return nil, err
 	}
-	return createdLogs, err
+	return createdLogs, nil
 }
 
 func (s *LitterService) Delete(ctx context.Context, petID, logID uuid.UUID) error {

@@ -32,7 +32,7 @@ func avatarTestApp(t *testing.T, includeAvatar bool) (*fiber.App, *rsa.PrivateKe
 	if err != nil {
 		t.Fatalf("สร้างคีย์ไม่สำเร็จ: %v", err)
 	}
-	app, _, _ := NewApp(db, config.Config{Port: "0", PetListIncludeAvatar: includeAvatar},
+	app, _, _, _ := NewApp(db, config.Config{Port: "0", PetListIncludeAvatar: includeAvatar},
 		middleware.AuthConfig{PublicKeys: []*rsa.PublicKey{&key.PublicKey}})
 	return app, key
 }

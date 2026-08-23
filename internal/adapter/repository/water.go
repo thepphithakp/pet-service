@@ -31,7 +31,7 @@ func NewGORMWaterRepository(db *gorm.DB) *GORMWaterRepository {
 func (r *GORMWaterRepository) Save(ctx context.Context, log *domain.WaterLog) (*domain.WaterLog, error) {
 	m := model.WaterFromDomain(*log)
 
-	tx := r.db.WithContext(ctx).
+	tx := dbFrom(ctx, r.db).
 		Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "id"}}, DoNothing: true}).
 		Create(&m)
 	if tx.Error != nil {
@@ -41,7 +41,7 @@ func (r *GORMWaterRepository) Save(ctx context.Context, log *domain.WaterLog) (*
 	if tx.RowsAffected == 0 {
 		// มีแถวนี้อยู่แล้ว — ถ้าเป็นของสัตว์เลี้ยงตัวเดิม ถือว่าส่งซ้ำ คืนของเดิมไป
 		var existing model.Water
-		err := r.db.WithContext(ctx).
+		err := dbFrom(ctx, r.db).
 			First(&existing, "id = ? AND pet_id = ?", m.ID, m.PetID).Error
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			// id ไปชนรายการของสัตว์เลี้ยงตัวอื่น — บอกให้ชัดแทนที่จะเป็น 500
@@ -65,7 +65,7 @@ func (r *GORMWaterRepository) Save(ctx context.Context, log *domain.WaterLog) (*
 // เปลี่ยนได้จริงหลัง UPDATE หรือ VACUUM ทำให้รายการในแอปสลับที่เองโดยไม่มีสาเหตุ
 func (r *GORMWaterRepository) FindByPetID(ctx context.Context, petID uuid.UUID) ([]domain.WaterLog, error) {
 	var models []model.Water
-	if err := r.db.WithContext(ctx).
+	if err := dbFrom(ctx, r.db).
 		Where("pet_id = ?", petID).
 		Order("date desc, id desc").
 		Find(&models).Error; err != nil {
@@ -83,7 +83,7 @@ func (r *GORMWaterRepository) FindByPetID(ctx context.Context, petID uuid.UUID) 
 // เดิมไม่เช็ค RowsAffected เลย ทำให้ลบของที่ไม่มีอยู่ก็คืน 204 (C-9)
 // ตอนนี้ทำเหมือน litter แล้ว
 func (r *GORMWaterRepository) Delete(ctx context.Context, petID, logID uuid.UUID) error {
-	result := r.db.WithContext(ctx).Delete(&model.Water{}, "id = ? AND pet_id = ?", logID, petID)
+	result := dbFrom(ctx, r.db).Delete(&model.Water{}, "id = ? AND pet_id = ?", logID, petID)
 	if result.Error != nil {
 		return result.Error
 	}
@@ -100,7 +100,7 @@ func (r *GORMWaterRepository) Delete(ctx context.Context, petID, logID uuid.UUID
 func (r *GORMWaterRepository) FindPageByPetID(ctx context.Context, petID uuid.UUID, page domain.LogPage) ([]domain.WaterLog, bool, error) {
 	page = page.Normalize()
 
-	q := r.db.WithContext(ctx).Where("pet_id = ?", petID)
+	q := dbFrom(ctx, r.db).Where("pet_id = ?", petID)
 	if page.Cursor != nil {
 		// เทียบเป็น row value ทีเดียว ตรงกับลำดับ (date desc, id desc) พอดี
 		// เขียนแยกเป็น date < ? OR (date = ? AND id < ?) ก็ได้ผลเท่ากัน

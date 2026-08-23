@@ -35,7 +35,7 @@ func newMasterDataEnv(t *testing.T) *mdEnv {
 	if err != nil {
 		t.Fatal(err)
 	}
-	app, _, _ := NewApp(db, config.Config{Port: "0"}, middleware.AuthConfig{
+	app, _, _, _ := NewApp(db, config.Config{Port: "0"}, middleware.AuthConfig{
 		PublicKeys: []*rsa.PublicKey{&key.PublicKey},
 	})
 
@@ -284,7 +284,7 @@ func TestNewLitterTypeUsableImmediately(t *testing.T) {
 
 	// ใช้ token ของเจ้าของสัตว์เลี้ยงตัวนั้น
 	key, _ := rsa.GenerateKey(rand.Reader, 2048)
-	app, _, _ := NewApp(db, config.Config{Port: "0"}, middleware.AuthConfig{
+	app, _, _, _ := NewApp(db, config.Config{Port: "0"}, middleware.AuthConfig{
 		PublicKeys: []*rsa.PublicKey{&key.PublicKey},
 	})
 	tok, _ := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{

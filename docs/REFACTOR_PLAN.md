@@ -1167,9 +1167,47 @@ ALTER TABLE pet.litter_logs VALIDATE CONSTRAINT fk_litter_logs_type;  -- ล็�
 9. **`Order` ที่ litter** (แก้ C-11) ให้เหมือน water
 10. ลบ `default:gen_random_uuid()` หรือลบ `uuid.New()` ในโค้ด — เลือกทางเดียว (แก้ P-7) แนะนำให้ app generate เพื่อให้ได้ ID ก่อน insert สำหรับ outbox/event
 
+**สถานะ (2026-08-23)**
+
+| ข้อ | สถานะ |
+|---|---|
+| 1 avatar ออกจาก list | ✅ ทำแล้ว — มีสวิตช์ `PET_LIST_INCLUDE_AVATAR` |
+| 2 avatar ออกจาก Postgres (MinIO/S3) | ⬜ ยังไม่ทำ |
+| 3 pagination | ⬜ ยังไม่ทำ — เปลี่ยนรูปแบบ response จะทำให้แอปพัง ต้องวางแผนร่วมกับแอป |
+| 4 Preload แบบเลือกได้ | ⬜ ยังไม่ทำ |
+| 5 connection pool | ✅ ทำแล้ว 20/10/30m/5m |
+| 6 sslmode จาก env | ✅ มีอยู่แล้วตั้งแต่ Phase 1 (`DB_SSL_MODE`) |
+| 7 BirthDate → date | ⬜ ยังไม่ทำ |
+| 8 is_active ใช้จริงหรือลบ | ⬜ ต้องตัดสินใจกับ PO ก่อน |
+| 9 Order ที่ litter | ✅ ทำแล้ว — เป็นบั๊กจริง ไม่ใช่แค่ inconsistency |
+| 10 เลือกทางเดียวระหว่าง DB default กับ uuid.New() | ⬜ ยังไม่ทำ |
+
+**ข้อ 1 — วัดผลจริงจากเทสต์บนฐานข้อมูล** (สัตว์เลี้ยง 1 ตัว รูป 512KB)
+
+```
+มีรูปในรายการ  699,425 ไบต์
+ไม่มีรูป            374 ไบต์
+```
+
+บน production ผู้ใช้มีสัตว์เลี้ยง 3 ตัว รูปรวม 3.7MB (ใหญ่สุด 2MB)
+
+⚠️ `PET_LIST_INCLUDE_AVATAR` ตั้ง default = `true` (พฤติกรรมเดิม) โดยตั้งใจ
+เพราะแอปที่ใช้อยู่อ่านรูปจาก `avatarData` ในรายการ ถ้าตัดทันทีรูปจะหายจากแอป
+**ปิดเป็น `false` เมื่อแอปเปลี่ยนไปใช้ `GET /pets/:id/avatar` แล้วเท่านั้น**
+(แก้ที่ helm values อย่างเดียว ไม่ต้อง build ใหม่)
+
+**ข้อ 9 — เป็นบั๊กที่ผู้ใช้เห็น ไม่ใช่แค่โค้ดไม่สม่ำเสมอ**
+
+`FindByPetID` ของ litter ไม่มี `ORDER BY` เลย PostgreSQL จึงคืนลำดับตามใจ
+และลำดับเปลี่ยนได้จริงหลัง `UPDATE` หรือ `VACUUM` — รายการในแอปสลับที่เอง
+ส่วน water เรียงตาม `date` อยู่แล้วแต่ log วันเดียวกันยังสลับกันเองได้
+แก้เป็น `date desc, id desc` ทั้งสองที่
+
 **Acceptance**
-- [ ] `GET /pets` ของ user ที่มี 50 ตัว → response < 100KB และ p95 < 200ms
-- [ ] Load test 100 concurrent ไม่ทำให้ Postgres connection เต็ม
+- [x] `GET /pets` ตอบขนาดเล็ก — พิสูจน์แล้วว่าปิด flag ได้ 374 ไบต์
+      (ยังไม่ได้เปิดใช้จริงบน production รอแอปพร้อม)
+- [x] Postgres connection ไม่เต็ม — ตั้งเพดาน 20 ต่อ service, 3 service = 60 < 100
+      ตรวจบน production แล้ว: pet_app / auth_app / event_app อย่างละ 1 connection
 - [ ] EXPLAIN ยืนยันว่า authz query ใช้ index
 
 ---

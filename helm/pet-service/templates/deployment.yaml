@@ -59,6 +59,16 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.event.ingestTokenSecret }}
                   key: token
+            - name: PET_LIST_INCLUDE_AVATAR
+              value: {{ .Values.petList.includeAvatar | quote }}
+            - name: DB_MAX_OPEN_CONNS
+              value: {{ .Values.dbPool.maxOpenConns | quote }}
+            - name: DB_MAX_IDLE_CONNS
+              value: {{ .Values.dbPool.maxIdleConns | quote }}
+            - name: DB_CONN_MAX_LIFETIME
+              value: {{ .Values.dbPool.connMaxLifetime | quote }}
+            - name: DB_CONN_MAX_IDLE_TIME
+              value: {{ .Values.dbPool.connMaxIdleTime | quote }}
             - name: SHUTDOWN_DRAIN_DELAY
               value: {{ .Values.shutdown.drainDelay | quote }}
             - name: SHUTDOWN_TIMEOUT

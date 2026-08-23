@@ -19,6 +19,17 @@ type PetRepository interface {
 
 	FindAllForUser(ctx context.Context, userID uuid.UUID) ([]domain.Pet, error)
 	FindAll(ctx context.Context) ([]domain.Pet, error)
+
+	// FindAllForUserSummary เหมือน FindAllForUser แต่ไม่ดึง avatar_data
+	//
+	// ต้องแยกเป็นอีก method ไม่ใช่ใส่ flag เพราะชนิดที่คืนต่างกัน
+	// และเพื่อให้เห็นชัดในโค้ดว่า query ไหนลากรูปมาด้วย
+	FindAllForUserSummary(ctx context.Context, userID uuid.UUID) ([]domain.PetSummary, error)
+	FindAllSummary(ctx context.Context) ([]domain.PetSummary, error)
+
+	// FindAvatar ดึงเฉพาะรูป — ไม่ดึงคอลัมน์อื่นเลย
+	// คืน nil ทั้งกรณีไม่มีสัตว์เลี้ยงและกรณีมีแต่ไม่มีรูป ผู้เรียกตอบ 404 เหมือนกัน
+	FindAvatar(ctx context.Context, petID uuid.UUID) (*domain.Avatar, error)
 	FindByID(ctx context.Context, id uuid.UUID) (*domain.Pet, error)
 	Save(ctx context.Context, pet *domain.Pet) (*domain.Pet, error)
 	Update(ctx context.Context, pet *domain.Pet) (*domain.Pet, error)

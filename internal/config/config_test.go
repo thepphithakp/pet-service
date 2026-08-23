@@ -116,3 +116,84 @@ func TestShutdownConfig(t *testing.T) {
 		t.Fatalf("DrainDelay = %v ต้องการ 3s", cfg3.Shutdown.DrainDelay)
 	}
 }
+
+// TestLoad_ConnectionPoolDefaults
+//
+// ค่า default ของ database/sql คือเปิด connection ได้ไม่จำกัด
+// ถ้าไม่ตั้งเพดาน pod เดียวตอน traffic พุ่งอาจกิน max_connections ของ postgres
+// (ตั้งไว้ 100) จนทุก service ต่อไม่ได้พร้อมกัน
+//
+// 3 service × 20 = 60 เหลือที่ให้ Flyway Job และการต่อด้วยมือ
+func TestLoad_ConnectionPoolDefaults(t *testing.T) {
+	setDBEnv(t)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("ไม่ควร error: %v", err)
+	}
+
+	if cfg.DB.MaxOpenConns != 20 {
+		t.Errorf("MaxOpenConns = %d ต้องเป็น 20", cfg.DB.MaxOpenConns)
+	}
+	if cfg.DB.MaxIdleConns != 10 {
+		t.Errorf("MaxIdleConns = %d ต้องเป็น 10", cfg.DB.MaxIdleConns)
+	}
+	if cfg.DB.MaxIdleConns > cfg.DB.MaxOpenConns {
+		t.Error("MaxIdleConns ห้ามมากกว่า MaxOpenConns — database/sql จะลดให้เองเงียบๆ")
+	}
+	if cfg.DB.ConnMaxLifetime.Minutes() != 30 {
+		t.Errorf("ConnMaxLifetime = %v ต้องเป็น 30m", cfg.DB.ConnMaxLifetime)
+	}
+}
+
+// TestLoad_PoolOverrideAndGuards ค่าที่ตั้งผิดต้องไม่ทำให้ได้ 0 (= ไม่จำกัด)
+func TestLoad_PoolOverrideAndGuards(t *testing.T) {
+	setDBEnv(t)
+
+	cases := []struct {
+		name  string
+		value string
+		want  int
+	}{
+		{"ตั้งค่าปกติ", "35", 35},
+		{"ค่าติดลบ → ใช้ default", "-5", 20},
+		{"ศูนย์ → ใช้ default ไม่ใช่ unlimited", "0", 20},
+		{"ไม่ใช่ตัวเลข → ใช้ default", "มาก", 20},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("DB_MAX_OPEN_CONNS", tc.value)
+			cfg, err := Load()
+			if err != nil {
+				t.Fatalf("ไม่ควร error: %v", err)
+			}
+			if cfg.DB.MaxOpenConns != tc.want {
+				t.Errorf("MaxOpenConns = %d ต้องเป็น %d", cfg.DB.MaxOpenConns, tc.want)
+			}
+		})
+	}
+}
+
+// TestLoad_PetListIncludeAvatarDefaultsToTrue
+//
+// default ต้องเป็นพฤติกรรมเดิม ไม่งั้น deploy แล้วรูปหายจากแอปทันที
+func TestLoad_PetListIncludeAvatarDefaultsToTrue(t *testing.T) {
+	setDBEnv(t)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("ไม่ควร error: %v", err)
+	}
+	if !cfg.PetListIncludeAvatar {
+		t.Error("default ต้องเป็น true เพื่อไม่ให้แอปที่ใช้อยู่พังตอน deploy")
+	}
+
+	t.Setenv("PET_LIST_INCLUDE_AVATAR", "false")
+	cfg, err = Load()
+	if err != nil {
+		t.Fatalf("ไม่ควร error: %v", err)
+	}
+	if cfg.PetListIncludeAvatar {
+		t.Error("ตั้ง false แล้วต้องปิดจริง")
+	}
+}

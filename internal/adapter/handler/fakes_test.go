@@ -53,6 +53,19 @@ type fakePetUC struct {
 	ownerArg   uuid.UUID
 	updateArg  *domain.Pet
 	deletedID  uuid.UUID
+
+	summaries []domain.PetSummary
+	avatar    *domain.Avatar
+}
+
+func (f *fakePetUC) GetAllForUserSummary(_ context.Context, _ uuid.UUID) ([]domain.PetSummary, error) {
+	return f.summaries, f.err
+}
+func (f *fakePetUC) GetAllSummary(_ context.Context) ([]domain.PetSummary, error) {
+	return f.summaries, f.err
+}
+func (f *fakePetUC) GetAvatar(_ context.Context, _ uuid.UUID) (*domain.Avatar, error) {
+	return f.avatar, f.err
 }
 
 func (f *fakePetUC) GetAllForUser(_ context.Context, _ uuid.UUID) ([]domain.Pet, error) {

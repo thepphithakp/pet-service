@@ -63,3 +63,60 @@ func PetFromDomain(p domain.Pet) Pet {
 		CreatedAt: p.CreatedAt, UpdatedAt: p.UpdatedAt, CreatedBy: p.CreatedBy, UpdatedBy: p.UpdatedBy,
 	}
 }
+
+// PetSummary คือผลของ query ที่ไม่ดึง avatar_data
+//
+// ประกาศเป็น struct แยกแทนการใช้ model.Pet กับ Select เพราะถ้าใช้ตัวเดิม
+// ฟิลด์ AvatarData จะเป็น nil ซึ่งแยกไม่ออกจาก "ไม่มีรูป" — ต้องมี has_avatar
+// ที่คำนวณจากฝั่ง database มาด้วย
+type PetSummary struct {
+	ID               uuid.UUID
+	OwnerID          uuid.UUID
+	OwnerUsername    string
+	Name             string
+	Species          string
+	Breed            string
+	ColorCode        string
+	BirthDate        time.Time
+	Gender           string
+	CurrentWeight    *float64
+	MicrochipId      *string
+	IsSpayedNeutered bool
+	BloodType        *string
+	Allergies        *string
+	Personality      *string
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+	CreatedBy        *string
+	UpdatedBy        *string
+	HasAvatar        bool
+}
+
+func (PetSummary) TableName() string { return "pets" }
+
+// summaryColumns คือคอลัมน์ที่ query แบบ summary ดึง
+//
+// เขียนไว้ที่เดียวเพื่อไม่ให้เผลอใส่ avatar_data กลับเข้าไปตอนแก้ทีหลัง
+// has_avatar คำนวณที่ database เพื่อไม่ต้องส่ง bytea ทั้งก้อนข้ามเน็ตเวิร์กมานับ
+const summaryColumns = `pets.id, pets.owner_id, pets.owner_username, pets.name,
+	pets.species, pets.breed, pets.color_code, pets.birth_date, pets.gender,
+	pets.current_weight, pets.microchip_id, pets.is_spayed_neutered,
+	pets.blood_type, pets.allergies, pets.personality,
+	pets.created_at, pets.updated_at, pets.created_by, pets.updated_by,
+	(pets.avatar_data IS NOT NULL AND octet_length(pets.avatar_data) > 0) AS has_avatar`
+
+// SummaryColumns เปิดให้ repository ใช้
+func SummaryColumns() string { return summaryColumns }
+
+func (m *PetSummary) ToDomain() domain.PetSummary {
+	return domain.PetSummary{
+		ID: m.ID, OwnerID: m.OwnerID, OwnerUsername: m.OwnerUsername,
+		Name: m.Name, Species: m.Species, Breed: m.Breed, ColorCode: m.ColorCode,
+		BirthDate: m.BirthDate, Gender: m.Gender, CurrentWeight: m.CurrentWeight,
+		MicrochipId: m.MicrochipId, IsSpayedNeutered: m.IsSpayedNeutered,
+		BloodType: m.BloodType, Allergies: m.Allergies, Personality: m.Personality,
+		CreatedAt: m.CreatedAt, UpdatedAt: m.UpdatedAt,
+		CreatedBy: m.CreatedBy, UpdatedBy: m.UpdatedBy,
+		HasAvatar: m.HasAvatar,
+	}
+}

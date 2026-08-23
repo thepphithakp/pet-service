@@ -39,6 +39,30 @@ func (s *PetService) GetAll(ctx context.Context) ([]domain.Pet, error) {
 	return s.repo.FindAll(ctx)
 }
 
+// GetAllForUserSummary คืนรายการที่ไม่มี avatar
+//
+// authorization เท่ากับ GetAllForUser — repository กรองด้วย owner_id
+// และ pet_caregivers อยู่แล้ว จึงไม่ต้องเรียก authz ซ้ำ
+func (s *PetService) GetAllForUserSummary(ctx context.Context, userID uuid.UUID) ([]domain.PetSummary, error) {
+	return s.repo.FindAllForUserSummary(ctx, userID)
+}
+
+// GetAllSummary ใช้กับ endpoint ของ admin ซึ่งคุมสิทธิ์ที่ชั้น route แล้ว
+func (s *PetService) GetAllSummary(ctx context.Context) ([]domain.PetSummary, error) {
+	return s.repo.FindAllSummary(ctx)
+}
+
+// GetAvatar ตรวจสิทธิ์ก่อนคืนรูป
+//
+// ใช้สิทธิ์ชุดเดียวกับการอ่านข้อมูลสัตว์เลี้ยง — ใครดูข้อมูลได้ก็ดูรูปได้
+// ถ้าไม่ตรวจ ใครก็ดึงรูปสัตว์เลี้ยงของคนอื่นได้ถ้ารู้ UUID
+func (s *PetService) GetAvatar(ctx context.Context, petID uuid.UUID) (*domain.Avatar, error) {
+	if err := s.authz.Authorize(ctx, petID, ReqPetRead); err != nil {
+		return nil, err
+	}
+	return s.repo.FindAvatar(ctx, petID)
+}
+
 func (s *PetService) GetByID(ctx context.Context, id uuid.UUID) (*domain.Pet, error) {
 	if err := s.authz.Authorize(ctx, id, ReqPetRead); err != nil {
 		return nil, err

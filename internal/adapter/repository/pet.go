@@ -2,6 +2,8 @@ package repository
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"strings"
 
@@ -132,4 +134,76 @@ func (r *GORMPetRepository) Update(ctx context.Context, pet *domain.Pet) (*domai
 
 func (r *GORMPetRepository) Delete(ctx context.Context, id uuid.UUID) error {
 	return r.db.WithContext(ctx).Delete(&model.Pet{}, "id = ?", id).Error
+}
+
+// FindAllForUserSummary ดึงรายการสัตว์เลี้ยงโดยไม่ลาก avatar_data มาด้วย
+//
+// ก่อนหน้านี้ GET /pets ใช้ SELECT * ซึ่งดึง bytea ของรูปทุกตัวมาด้วย
+// บน production ผู้ใช้ที่มีสัตว์เลี้ยง 3 ตัวต้องโหลดเกือบ 4MB (รูปใหญ่สุด 2MB)
+// ทั้งที่หน้ารายการแสดงรูปเล็กๆ
+func (r *GORMPetRepository) FindAllForUserSummary(ctx context.Context, userID uuid.UUID) ([]domain.PetSummary, error) {
+	var models []model.PetSummary
+	err := r.db.WithContext(ctx).
+		Model(&model.Pet{}).
+		Select(model.SummaryColumns()).
+		Where("owner_id = ?", userID).
+		Or("EXISTS (SELECT 1 FROM pet_caregivers WHERE pet_caregivers.pet_id = pets.id AND pet_caregivers.user_id = ? AND pet_caregivers.deleted_at IS NULL)", userID).
+		Find(&models).Error
+	if err != nil {
+		return nil, err
+	}
+	return toSummaries(models), nil
+}
+
+func (r *GORMPetRepository) FindAllSummary(ctx context.Context) ([]domain.PetSummary, error) {
+	var models []model.PetSummary
+	err := r.db.WithContext(ctx).
+		Model(&model.Pet{}).
+		Select(model.SummaryColumns()).
+		Find(&models).Error
+	if err != nil {
+		return nil, err
+	}
+	return toSummaries(models), nil
+}
+
+func toSummaries(models []model.PetSummary) []domain.PetSummary {
+	out := make([]domain.PetSummary, len(models))
+	for i := range models {
+		out[i] = models[i].ToDomain()
+	}
+	return out
+}
+
+// FindAvatar ดึงเฉพาะรูปของสัตว์เลี้ยงตัวเดียว
+//
+// คืน nil ทั้งกรณีไม่มีสัตว์เลี้ยงและกรณีมีแต่ไม่มีรูป
+// ผู้เรียกจะได้ตอบ 404 เหมือนกัน ไม่ให้ไล่เดา UUID ว่ามีตัวไหนอยู่บ้าง
+func (r *GORMPetRepository) FindAvatar(ctx context.Context, petID uuid.UUID) (*domain.Avatar, error) {
+	var row struct {
+		AvatarData []byte
+	}
+	err := r.db.WithContext(ctx).
+		Model(&model.Pet{}).
+		Select("avatar_data").
+		Where("id = ?", petID).
+		Take(&row).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if len(row.AvatarData) == 0 {
+		return nil, nil
+	}
+
+	// ETag คำนวณจากตัวข้อมูลรูป จึงเปลี่ยนเมื่อรูปเปลี่ยนเท่านั้น
+	// ถ้าใช้ updated_at ของ pet จะเปลี่ยนทุกครั้งที่แก้ชื่อหรือน้ำหนัก
+	// ทำให้ client ต้องโหลดรูปใหม่ทั้งที่รูปเดิม
+	sum := sha256.Sum256(row.AvatarData)
+	return &domain.Avatar{
+		Data: row.AvatarData,
+		ETag: `"` + hex.EncodeToString(sum[:]) + `"`,
+	}, nil
 }

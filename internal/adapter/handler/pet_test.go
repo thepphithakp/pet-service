@@ -49,8 +49,15 @@ const testUserID = "11111111-1111-1111-1111-111111111111"
 func petHandlerApp(uc *fakePetUC, locals map[string]any) interface {
 	Test(*http.Request, ...int) (*http.Response, error)
 } {
+	// true = พฤติกรรมเดิมที่ส่ง avatar ไปกับรายการ ซึ่งเทสต์ชุดเดิมคาดหวังอยู่
+	return petHandlerAppWithAvatar(uc, locals, true)
+}
+
+func petHandlerAppWithAvatar(uc *fakePetUC, locals map[string]any, includeAvatar bool) interface {
+	Test(*http.Request, ...int) (*http.Response, error)
+} {
 	app := newTestApp(locals)
-	h := NewPetHandler(uc)
+	h := NewPetHandler(uc, includeAvatar)
 	h.RegisterRoutes(app.Group("/api/v1"))
 	h.RegisterAdminRoutes(app.Group("/api/v1/admin"))
 	return app

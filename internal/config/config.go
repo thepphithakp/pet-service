@@ -5,6 +5,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -16,6 +17,12 @@ type Config struct {
 	JWT JWTConfig
 
 	EventServiceURL string
+
+	// PetListIncludeAvatar เปิดไว้ = GET /pets ส่ง avatarData ไปด้วยเหมือนเดิม
+	//
+	// ปิดเมื่อแอปเปลี่ยนไปใช้ GET /pets/:id/avatar แล้ว
+	// ปิดแล้ว response ของหน้ารายการจะเล็กลงจากหลักเมกะไบต์เหลือไม่กี่กิโลไบต์
+	PetListIncludeAvatar bool
 
 	// EventIngestToken คือ token ที่ event-service ใช้ยืนยันว่าผู้เรียกเป็น service
 	// ไม่ใช่ผู้ใช้ทั่วไป — ต้องเป็นค่าเดียวกับ EVENT_INGEST_TOKEN ฝั่งนั้น
@@ -68,6 +75,17 @@ type DBConfig struct {
 	//    เมื่อ auth-service และ event-service ย้าย schema เสร็จแล้ว
 	//    ค่อยเปลี่ยนเป็น "pet" อย่างเดียว
 	SearchPath string
+	// --- Connection pool ---
+	//
+	// ค่า default ของ database/sql คือ "เปิดได้ไม่จำกัด" ซึ่งอันตราย:
+	// ตอน traffic พุ่ง แต่ละ pod จะเปิด connection เพิ่มไปเรื่อยๆ จนกิน
+	// max_connections ของ postgres (ตั้งไว้ 100) แล้ว "ทุก service" ต่อไม่ได้พร้อมกัน
+	//
+	// 3 service × 20 = 60 < 100 เหลือที่ให้ Flyway Job และการต่อด้วยมือ
+	MaxOpenConns    int
+	MaxIdleConns    int
+	ConnMaxLifetime time.Duration
+	ConnMaxIdleTime time.Duration
 }
 
 type JWTConfig struct {
@@ -124,7 +142,11 @@ func Load() (Config, error) {
 			SSLMode:  env("DB_SSLMODE", "disable"),
 			TimeZone: env("DB_TIMEZONE", "Asia/Bangkok"),
 			// default "pet,public" เพื่อให้ deploy ได้ทั้งก่อนและหลังย้าย schema
-			SearchPath: env("DB_SEARCH_PATH", "pet,public"),
+			MaxOpenConns:    envInt("DB_MAX_OPEN_CONNS", 20),
+			MaxIdleConns:    envInt("DB_MAX_IDLE_CONNS", 10),
+			ConnMaxLifetime: envDuration("DB_CONN_MAX_LIFETIME", 30*time.Minute),
+			ConnMaxIdleTime: envDuration("DB_CONN_MAX_IDLE_TIME", 5*time.Minute),
+			SearchPath:      env("DB_SEARCH_PATH", "pet,public"),
 		},
 		JWT: JWTConfig{
 			PublicKeyPEM:  os.Getenv("JWT_PUBLIC_KEY"),
@@ -136,6 +158,8 @@ func Load() (Config, error) {
 		},
 		EventServiceURL:  env("EVENT_SERVICE_URL", "http://event-service.vertex.svc.cluster.local:4002"),
 		EventIngestToken: os.Getenv("EVENT_INGEST_TOKEN"),
+		// default = true เพื่อไม่ให้แอปที่ใช้อยู่พังตอน deploy
+		PetListIncludeAvatar: envBool("PET_LIST_INCLUDE_AVATAR", true),
 		Log: LogConfig{
 			Level: env("LOG_LEVEL", "info"),
 			Body:  os.Getenv("LOG_BODY") == "true",
@@ -201,4 +225,30 @@ func env(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+// envBool อ่านค่า boolean จาก env โดยมี default เมื่อไม่ได้ตั้งหรือค่าอ่านไม่ออก
+func envBool(key string, fallback bool) bool {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback
+	}
+	b, err := strconv.ParseBool(v)
+	if err != nil {
+		return fallback
+	}
+	return b
+}
+
+// envInt อ่านจำนวนเต็มจาก env โดยมี default เมื่อไม่ได้ตั้งหรือค่าอ่านไม่ออก
+func envInt(key string, fallback int) int {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n <= 0 {
+		return fallback
+	}
+	return n
 }

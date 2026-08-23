@@ -26,6 +26,9 @@ func NewDB(cfg config.DBConfig) (*gorm.DB, error) {
 	for i := 0; i < dbConnectAttempts; i++ {
 		db, err = gorm.Open(postgres.Open(cfg.DSN()), &gorm.Config{})
 		if err == nil {
+			if err := configurePool(db, cfg); err != nil {
+				return nil, err
+			}
 			return db, nil
 		}
 		slog.Warn("เชื่อมต่อ DB ไม่สำเร็จ กำลังลองใหม่",
@@ -45,4 +48,28 @@ func CloseDB(db *gorm.DB) error {
 		return err
 	}
 	return sqlDB.Close()
+}
+
+// configurePool ตั้งเพดาน connection
+//
+// ต้องตั้งเสมอ — ค่า default ของ database/sql คือเปิดได้ไม่จำกัด
+// ตอน traffic พุ่ง pod เดียวอาจเปิดจนกิน max_connections ของ postgres
+// แล้วทำให้ service อื่นต่อไม่ได้ไปด้วย
+func configurePool(db *gorm.DB, cfg config.DBConfig) error {
+	sqlDB, err := db.DB()
+	if err != nil {
+		return fmt.Errorf("ดึง *sql.DB จาก gorm ไม่ได้: %w", err)
+	}
+
+	sqlDB.SetMaxOpenConns(cfg.MaxOpenConns)
+	sqlDB.SetMaxIdleConns(cfg.MaxIdleConns)
+	// จำกัดอายุ connection เพื่อให้ connection กระจายใหม่หลัง postgres restart
+	// หรือหลังเปลี่ยน DNS ของ service แทนที่จะค้างกับตัวเดิมตลอดไป
+	sqlDB.SetConnMaxLifetime(cfg.ConnMaxLifetime)
+	sqlDB.SetConnMaxIdleTime(cfg.ConnMaxIdleTime)
+
+	slog.Info("ตั้งค่า connection pool",
+		"max_open", cfg.MaxOpenConns, "max_idle", cfg.MaxIdleConns,
+		"max_lifetime", cfg.ConnMaxLifetime, "max_idle_time", cfg.ConnMaxIdleTime)
+	return nil
 }

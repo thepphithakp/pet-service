@@ -57,7 +57,7 @@ func wire(db *gorm.DB, cfg config.Config) (handlers, *event.HTTPEventPublisher) 
 
 	// Input adapters
 	return handlers{
-		pet:        handler.NewPetHandler(petService),
+		pet:        handler.NewPetHandler(petService, cfg.PetListIncludeAvatar),
 		caregiver:  handler.NewCaregiverHandler(caregiverService),
 		litter:     handler.NewLitterHandler(litterService),
 		water:      handler.NewWaterHandler(waterService),

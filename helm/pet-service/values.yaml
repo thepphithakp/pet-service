@@ -226,6 +226,33 @@ jwt:
 event:
   ingestTokenSecret: event-ingest-token
 
+# --- Pet list / avatar ----------------------------------------------------
+#
+# GET /pets เดิมส่ง avatarData ไปกับทุกรายการ ซึ่งบน production แปลว่า
+# ผู้ใช้ที่มีสัตว์เลี้ยง 3 ตัว (รูปรวม 3.7MB) ต้องโหลดหลายเมกะไบต์ทุกครั้งที่เปิดหน้ารายการ
+#
+# วัดจากเทสต์บนฐานข้อมูลจริง: สัตว์เลี้ยง 1 ตัวรูป 512KB
+#   มีรูปในรายการ  699,425 ไบต์
+#   ไม่มีรูป            374 ไบต์
+#
+# ⚠️ เปิดไว้ก่อน (พฤติกรรมเดิม) เพราะแอปที่ใช้อยู่อ่านรูปจาก field นี้
+#    ปิดเป็น "false" เมื่อแอปเปลี่ยนไปใช้ GET /pets/:id/avatar แล้วเท่านั้น
+#    ไม่ต้อง build ใหม่ แค่แก้ค่านี้แล้ว deploy
+petList:
+  includeAvatar: true
+
+# --- Database connection pool --------------------------------------------
+#
+# ค่า default ของ database/sql คือเปิดได้ไม่จำกัด ตอน traffic พุ่ง pod เดียว
+# อาจกิน max_connections ของ postgres (ตั้งไว้ 100) จนทุก service ต่อไม่ได้พร้อมกัน
+#
+# 3 service × 20 = 60 เหลือที่ให้ Flyway Job และการต่อด้วยมือ
+dbPool:
+  maxOpenConns: 20
+  maxIdleConns: 10
+  connMaxLifetime: 30m
+  connMaxIdleTime: 5m
+
 # --- Application env ------------------------------------------------------
 env:
   - name: EVENT_SERVICE_URL

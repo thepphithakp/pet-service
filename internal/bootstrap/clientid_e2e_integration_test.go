@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
@@ -182,6 +183,12 @@ func newClientIDTestApp(t *testing.T, db *gorm.DB) (*fiber.App, *rsa.PrivateKey)
 
 func doJSON(t *testing.T, app *fiber.App, method, path, body string, key *rsa.PrivateKey) (int, []byte) {
 	t.Helper()
+	return doJSONAs(t, app, method, path, body, key, clientIDTestOwner)
+}
+
+// doJSONAs ยิง request ในนามของ user ที่ระบุ
+func doJSONAs(t *testing.T, app *fiber.App, method, path, body string, key *rsa.PrivateKey, user uuid.UUID) (int, []byte) {
+	t.Helper()
 
 	var r io.Reader
 	if body != "" {
@@ -191,9 +198,22 @@ func doJSON(t *testing.T, app *fiber.App, method, path, body string, key *rsa.Pr
 	if body != "" {
 		req.Header.Set("Content-Type", "application/json")
 	}
+	signRequest(t, req, key, user)
 
+	resp, err := app.Test(req, 10_000)
+	if err != nil {
+		t.Fatalf("ยิง request ไม่สำเร็จ: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	b, _ := io.ReadAll(resp.Body)
+	return resp.StatusCode, b
+}
+
+// signRequest ใส่ Authorization header ที่เซ็นด้วยคีย์ทดสอบ
+func signRequest(t *testing.T, req *http.Request, key *rsa.PrivateKey, user uuid.UUID) {
+	t.Helper()
 	tok := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
-		"sub":   clientIDTestOwner.String(),
+		"sub":   user.String(),
 		"roles": []string{"USER"},
 		"exp":   time.Now().Add(time.Hour).Unix(),
 	})
@@ -203,12 +223,4 @@ func doJSON(t *testing.T, app *fiber.App, method, path, body string, key *rsa.Pr
 		t.Fatalf("เซ็น token ไม่สำเร็จ: %v", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+signed)
-
-	resp, err := app.Test(req, 10_000)
-	if err != nil {
-		t.Fatalf("ยิง request ไม่สำเร็จ: %v", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	b, _ := io.ReadAll(resp.Body)
-	return resp.StatusCode, b
 }

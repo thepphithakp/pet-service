@@ -13,6 +13,13 @@ import (
 type PetUseCase interface {
 	GetAllForUser(ctx context.Context, userID uuid.UUID) ([]domain.Pet, error)
 	GetAll(ctx context.Context) ([]domain.Pet, error)
+
+	// GetAllForUserSummary / GetAllSummary คืนรายการที่ไม่มีรูป
+	GetAllForUserSummary(ctx context.Context, userID uuid.UUID) ([]domain.PetSummary, error)
+	GetAllSummary(ctx context.Context) ([]domain.PetSummary, error)
+
+	// GetAvatar คืนรูปของสัตว์เลี้ยง — ตรวจสิทธิ์เหมือนการอ่านข้อมูลสัตว์เลี้ยง
+	GetAvatar(ctx context.Context, petID uuid.UUID) (*domain.Avatar, error)
 	GetByID(ctx context.Context, id uuid.UUID) (*domain.Pet, error)
 	Create(ctx context.Context, pet *domain.Pet, ownerID uuid.UUID) (*domain.Pet, error)
 	Update(ctx context.Context, id uuid.UUID, pet *domain.Pet) (*domain.Pet, error)

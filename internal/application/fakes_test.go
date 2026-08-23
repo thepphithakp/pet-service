@@ -22,6 +22,22 @@ type fakePetRepo struct {
 
 	access    domain.PetAccess
 	accessErr error
+
+	summaries []domain.PetSummary
+	avatar    *domain.Avatar
+	avatarErr error
+}
+
+func (f *fakePetRepo) FindAllForUserSummary(context.Context, uuid.UUID) ([]domain.PetSummary, error) {
+	return f.summaries, f.findErr
+}
+
+func (f *fakePetRepo) FindAllSummary(context.Context) ([]domain.PetSummary, error) {
+	return f.summaries, f.findErr
+}
+
+func (f *fakePetRepo) FindAvatar(context.Context, uuid.UUID) (*domain.Avatar, error) {
+	return f.avatar, f.avatarErr
 }
 
 func (f *fakePetRepo) FindAccess(context.Context, uuid.UUID, uuid.UUID) (domain.PetAccess, error) {

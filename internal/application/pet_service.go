@@ -47,8 +47,19 @@ func (s *PetService) GetAllForUserSummary(ctx context.Context, userID uuid.UUID)
 	return s.repo.FindAllForUserSummary(ctx, userID)
 }
 
-// GetAllSummary ใช้กับ endpoint ของ admin ซึ่งคุมสิทธิ์ที่ชั้น route แล้ว
+// GetAllSummary คืนรายการสัตว์เลี้ยงทั้งระบบแบบไม่มีรูป
+//
+// ⚠️ ต้องตรวจ CapPetReadAny เหมือน GetAll เป๊ะ
+//
+// ตอนเพิ่ม method นี้ครั้งแรกลืมใส่ เพราะเข้าใจผิดว่า route group ของ admin
+// คุมสิทธิ์ให้แล้ว — แต่ comment ที่ routes.go เขียนไว้ชัดว่าการตรวจจริง
+// อยู่ที่ชั้น service ส่วน group แยกไว้เพื่อความชัดเจนเท่านั้น
+// ผลคือ GET /api/v1/admin/pets เปิดให้ user ที่ล็อกอินคนไหนก็ได้
+// ดึงรายการสัตว์เลี้ยงทั้งระบบ เมื่อปิดสวิตช์ avatar
 func (s *PetService) GetAllSummary(ctx context.Context) ([]domain.PetSummary, error) {
+	if err := s.authz.AuthorizeGlobal(ctx, domain.CapPetReadAny); err != nil {
+		return nil, err
+	}
 	return s.repo.FindAllSummary(ctx)
 }
 

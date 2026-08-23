@@ -42,6 +42,8 @@ tidy: ## go mod tidy + ตรวจว่าไม่มี diff
 test: ## unit test (ไม่ต้องใช้ docker)
 	go test -race -count=1 ./...
 
+# ⚠️ ห้ามตรวจผลด้วย `| grep -c "^ok"` — บรรทัด FAIL จะถูกมองข้าม
+#    ให้ดู exit code ของ go test เท่านั้น (เคยพลาดจนเทสต์แดงค้างโดยไม่รู้ตัว)
 test-integration: ## integration test (ต้องมี postgres — ใช้ make db-up ก่อน)
 	TEST_DATABASE_URL="$${TEST_DATABASE_URL:-postgres://vertex:vertex@localhost:55432/vertex?sslmode=disable&search_path=pet}" \
 	go test -race -count=1 -tags=integration ./...

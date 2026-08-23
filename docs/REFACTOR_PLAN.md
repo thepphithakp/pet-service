@@ -1201,10 +1201,35 @@ ALTER TABLE pet.litter_logs VALIDATE CONSTRAINT fk_litter_logs_type;  -- ล็�
    ถ้ายังไม่พร้อม: อย่างน้อย expose `/metrics` (Prometheus) นับ request count / duration / error rate ต่อ route
 6. เพิ่ม HPA ใน helm (ถ้า metrics-server พร้อม)
 
-**Acceptance**
-- [ ] `kubectl rollout restart` ระหว่างยิง load → 0 dropped request
-- [ ] pod ที่ DB ล่ม → `readyz` fail แต่ `livez` ผ่าน (ไม่โดน kill ทิ้งวนลูป)
-- [ ] ทุก log line มี `request_id` และ parse เป็น JSON ได้
+**Acceptance** — ทำเสร็จและตรวจบนคลัสเตอร์จริงแล้ว 2026-08-23
+- [x] `kubectl rollout restart` ระหว่างยิง load → 0 dropped request
+      ยิงผ่าน ingress 4,662 request คร่อม rollout 2 รอบ ได้ 401/429 เท่านั้น **ไม่มี 5xx เลย**
+      (429 คือ rate limiter ทำงาน ไม่ใช่ request ตก รอบที่คุมอัตราให้ต่ำกว่า limit ได้ 401 ครบ 90/90)
+      log ของ pod เก่ายืนยันลำดับ: รับ SIGTERM → readyz ตอบ 503 → รอ drain 5s →
+      "request ที่ค้างอยู่ทำงานจนจบแล้ว" → "ปิดตัวเรียบร้อย" รวม ~5s (grace 45s)
+- [x] pod ที่ DB ล่ม → `readyz` fail แต่ `livez` ผ่าน (ไม่โดน kill ทิ้งวนลูป)
+      คุมด้วย `TestLiveness_IgnoresDependencies` + `TestReadiness_DBUnavailable`
+- [x] ทุก log line มี `request_id` และ parse เป็น JSON ได้
+      ตรวจ 130 บรรทัดจาก pod จริง: parse JSON ได้ทุกบรรทัด, access log มี `request_id` ครบ
+      (กล่อง ASCII ตอน start ของ Fiber ปิดด้วย `DisableStartupMessage`)
+
+**สิ่งที่ทำเพิ่มนอกเหนือจากแผน (เจอระหว่างทำ)**
+- ไม่ log `/livez` `/readyz` `/health` `/metrics` — probe ยิงทุก 2–5 วินาทีจนกลบ access log
+  ของ request จริง (เจอตอนไล่ incident วันที่ 2026-08-23)
+- probe/scrape ไม่ถูกนับใน rate limiter — ไม่งั้นตอน traffic สูง probe จะโดน 429 แล้ว k8s ฆ่า pod
+- `openTestDB` ปฏิเสธฐานข้อมูลที่ไม่มี dev seed — กัน integration test ยิงใส่ production
+  ตอนมี port-forward ค้างที่ localhost:5432
+- CD เดิม `helm upgrade | tee` กลืน exit code (เป็นของ `tee` = 0 เสมอ) job จึงขึ้นเขียว
+  ทั้งที่ deploy ไม่ขึ้น → ใส่ `set -euo pipefail` + step `Verify rollout` เทียบ image กับ sha
+  (แก้ทั้ง pet-service และ auth-service)
+
+**ยังไม่ทำ (ตั้งใจปิดไว้)**
+- HPA และ PodDisruptionBudget เขียน template ไว้แล้วแต่ `enabled: false`
+  คลัสเตอร์มี node เดียวและ replica เดียว PDB `minAvailable: 1` จะทำให้ `kubectl drain`
+  ค้างตลอดไป กลายเป็นขัดขวาง maintenance แทนที่จะช่วย
+  เปิดเมื่อ `replicaCount >= 2` และตรวจก่อนว่า rate limiter ซึ่งเก็บ state ในหน่วยความจำ
+  ของแต่ละ pod ยังให้ผลที่ยอมรับได้เมื่อกระจายหลาย pod
+- OpenTelemetry (trace) — ทำแค่ Prometheus metrics ตามทางเลือกที่แผนเปิดไว้
 
 ---
 

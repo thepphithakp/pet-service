@@ -70,6 +70,10 @@ func NewApp(db *gorm.DB, cfg config.Config, auth middleware.AuthConfig) (*fiber.
 	app := fiber.New(fiber.Config{
 		BodyLimit:    bodyLimit,
 		ErrorHandler: middleware.ErrorHandler,
+		// ปิดกล่อง ASCII ตอน start เพราะเป็นบรรทัดเดียวใน log ที่ parse
+		// เป็น JSON ไม่ได้ ทำให้ระบบเก็บ log ต้องมีข้อยกเว้น
+		// ข้อมูลที่จำเป็น (พอร์ต) มี log ของเราเองอยู่แล้ว
+		DisableStartupMessage: true,
 	})
 
 	// recover ต้องมาก่อนทุกอย่าง — เดิมไม่มีเลย panic ใน handler ทำให้

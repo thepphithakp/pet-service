@@ -50,6 +50,15 @@ type CaregiverRepository interface {
 // LitterRepository is the driven port for litter log persistence.
 type LitterRepository interface {
 	FindByPetID(ctx context.Context, petID uuid.UUID) ([]domain.LitterLog, error)
+
+	// FindPageByPetID คืนหนึ่งหน้าตามลำดับ (date desc, id desc)
+	//
+	// ใช้ keyset ไม่ใช่ offset — offset จะข้ามหรือซ้ำรายการเมื่อมี log ใหม่
+	// เพิ่มเข้ามาระหว่างที่ผู้ใช้กำลังเลื่อนดู ซึ่งเกิดตลอดกับรายการที่เรียงจากใหม่ไปเก่า
+	//
+	// คืน hasMore แยกต่างหาก เพราะการนับทั้งตารางเพื่อบอกว่าเหลืออีกไหม
+	// แพงกว่าการดึงมาเกินหนึ่งแถวแล้วดูว่าได้ครบไหม
+	FindPageByPetID(ctx context.Context, petID uuid.UUID, page domain.LogPage) (logs []domain.LitterLog, hasMore bool, err error)
 	Save(ctx context.Context, log *domain.LitterLog) (*domain.LitterLog, error)
 	SaveBatch(ctx context.Context, logs []domain.LitterLog) ([]domain.LitterLog, error)
 	// Delete รับ petID ด้วยเพื่อยืนยันว่า log อยู่ใต้สัตว์เลี้ยงตัวนั้นจริง

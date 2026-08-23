@@ -58,6 +58,14 @@ func (s *WaterService) GetByPetID(ctx context.Context, petID uuid.UUID) ([]domai
 	return s.repo.FindByPetID(ctx, petID)
 }
 
+// GetPageByPetID คืนหนึ่งหน้า — ตรวจสิทธิ์ชุดเดียวกับการอ่านทั้งหมด
+func (s *WaterService) GetPageByPetID(ctx context.Context, petID uuid.UUID, page domain.LogPage) ([]domain.WaterLog, bool, error) {
+	if err := s.authz.Authorize(ctx, petID, ReqLogRead); err != nil {
+		return nil, false, err
+	}
+	return s.repo.FindPageByPetID(ctx, petID, page)
+}
+
 func (s *WaterService) Delete(ctx context.Context, petID, logID uuid.UUID) error {
 	if err := s.authz.Authorize(ctx, petID, ReqWaterWrite); err != nil {
 		return err

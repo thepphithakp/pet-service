@@ -120,10 +120,18 @@ type fakeLitterUC struct {
 	batchArg    []domain.LitterLog
 	deletePetID uuid.UUID
 	deleteLogID uuid.UUID
+
+	pageArg domain.LogPage
+	hasMore bool
 }
 
 func (f *fakeLitterUC) GetForPet(_ context.Context, _ uuid.UUID) ([]domain.LitterLog, error) {
 	return f.list, f.err
+}
+
+func (f *fakeLitterUC) GetPageForPet(_ context.Context, _ uuid.UUID, p domain.LogPage) ([]domain.LitterLog, bool, error) {
+	f.pageArg = p
+	return f.list, f.hasMore, f.err
 }
 func (f *fakeLitterUC) Create(_ context.Context, l *domain.LitterLog) (*domain.LitterLog, error) {
 	f.createArg = l
@@ -147,6 +155,14 @@ type fakeWaterUC struct {
 	createArg   *domain.WaterLog
 	deletePetID uuid.UUID
 	deleteLogID uuid.UUID
+
+	pageArg domain.LogPage
+	hasMore bool
+}
+
+func (f *fakeWaterUC) GetPageByPetID(_ context.Context, _ uuid.UUID, p domain.LogPage) ([]domain.WaterLog, bool, error) {
+	f.pageArg = p
+	return f.list, f.hasMore, f.err
 }
 
 func (f *fakeWaterUC) Create(_ context.Context, l *domain.WaterLog) (*domain.WaterLog, error) {

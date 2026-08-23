@@ -37,6 +37,7 @@ type CaregiverUseCase interface {
 // LitterUseCase is the driving port for litter log operations.
 type LitterUseCase interface {
 	GetForPet(ctx context.Context, petID uuid.UUID) ([]domain.LitterLog, error)
+	GetPageForPet(ctx context.Context, petID uuid.UUID, page domain.LogPage) (logs []domain.LitterLog, hasMore bool, err error)
 	Create(ctx context.Context, log *domain.LitterLog) (*domain.LitterLog, error)
 	CreateBatch(ctx context.Context, logs []domain.LitterLog) ([]domain.LitterLog, error)
 	Delete(ctx context.Context, petID, logID uuid.UUID) error

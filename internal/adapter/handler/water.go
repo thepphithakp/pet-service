@@ -5,6 +5,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/vertex/pet-service/internal/adapter/handler/dto"
+	"github.com/vertex/pet-service/internal/domain"
 	"github.com/vertex/pet-service/internal/port"
 	"github.com/vertex/pet-service/pkg/apperror"
 )
@@ -22,11 +23,35 @@ func (h *WaterHandler) GetAll(c *fiber.Ctx) error {
 	if err != nil {
 		return apperror.BadRequest("Invalid pet ID", err)
 	}
-	logs, err := h.useCase.GetByPetID(c.UserContext(), petID)
+	// ผู้เรียกที่ไม่ส่ง limit หรือ cursor มาจะได้ array แบบเดิมเป๊ะ
+	// ไม่งั้นแอปที่ใช้อยู่ซึ่งคาดหวัง array จะพังทันทีที่ deploy
+	if !wantsPage(c) {
+		logs, err := h.useCase.GetByPetID(c.UserContext(), petID)
+		if err != nil {
+			return apperror.FromDomain(err)
+		}
+		warnIfLargeUnpaginated(c, len(logs))
+		return c.JSON(logs)
+	}
+
+	page, err := parseLogPage(c)
+	if err != nil {
+		return err
+	}
+	logs, hasMore, err := h.useCase.GetPageByPetID(c.UserContext(), petID, page)
 	if err != nil {
 		return apperror.FromDomain(err)
 	}
-	return c.JSON(logs)
+
+	var last *domain.LogCursor
+	if n := len(logs); n > 0 {
+		last = &domain.LogCursor{Date: logs[n-1].Date, ID: logs[n-1].ID}
+	}
+	return c.JSON(LogPageResponse{
+		Data:       logs,
+		NextCursor: nextCursorFrom(hasMore, last),
+		HasMore:    hasMore,
+	})
 }
 
 func (h *WaterHandler) Create(c *fiber.Ctx) error {

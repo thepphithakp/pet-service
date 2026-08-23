@@ -31,6 +31,14 @@ func (s *LitterService) GetForPet(ctx context.Context, petID uuid.UUID) ([]domai
 	return s.repo.FindByPetID(ctx, petID)
 }
 
+// GetPageForPet คืนหนึ่งหน้า — ตรวจสิทธิ์ชุดเดียวกับการอ่านทั้งหมด
+func (s *LitterService) GetPageForPet(ctx context.Context, petID uuid.UUID, page domain.LogPage) ([]domain.LitterLog, bool, error) {
+	if err := s.authz.Authorize(ctx, petID, ReqLogRead); err != nil {
+		return nil, false, err
+	}
+	return s.repo.FindPageByPetID(ctx, petID, page)
+}
+
 func (s *LitterService) Create(ctx context.Context, log *domain.LitterLog) (*domain.LitterLog, error) {
 	if err := s.authz.Authorize(ctx, log.PetID, ReqLitterWrite); err != nil {
 		return nil, err

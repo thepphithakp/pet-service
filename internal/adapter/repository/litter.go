@@ -108,3 +108,29 @@ func (r *GORMLitterRepository) Delete(ctx context.Context, petID, logID uuid.UUI
 	}
 	return nil
 }
+
+// FindPageByPetID คืนหนึ่งหน้าด้วย keyset pagination — เหตุผลเดียวกับ water
+func (r *GORMLitterRepository) FindPageByPetID(ctx context.Context, petID uuid.UUID, page domain.LogPage) ([]domain.LitterLog, bool, error) {
+	page = page.Normalize()
+
+	q := r.db.WithContext(ctx).Where("pet_id = ?", petID)
+	if page.Cursor != nil {
+		q = q.Where("(date, id) < (?, ?)", page.Cursor.Date, page.Cursor.ID)
+	}
+
+	var models []model.Litter
+	if err := q.Order("date desc, id desc").Limit(page.Limit + 1).Find(&models).Error; err != nil {
+		return nil, false, err
+	}
+
+	hasMore := len(models) > page.Limit
+	if hasMore {
+		models = models[:page.Limit]
+	}
+
+	result := make([]domain.LitterLog, len(models))
+	for i, m := range models {
+		result[i] = m.ToDomain()
+	}
+	return result, hasMore, nil
+}

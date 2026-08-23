@@ -92,3 +92,35 @@ func (r *GORMWaterRepository) Delete(ctx context.Context, petID, logID uuid.UUID
 	}
 	return nil
 }
+
+// FindPageByPetID คืนหนึ่งหน้าด้วย keyset pagination
+//
+// ดึงมา limit+1 แถวเพื่อรู้ว่ายังมีต่อไหม โดยไม่ต้อง COUNT ทั้งตาราง
+// แถวที่เกินมาไม่ได้ส่งกลับ ใช้เป็นสัญญาณอย่างเดียว
+func (r *GORMWaterRepository) FindPageByPetID(ctx context.Context, petID uuid.UUID, page domain.LogPage) ([]domain.WaterLog, bool, error) {
+	page = page.Normalize()
+
+	q := r.db.WithContext(ctx).Where("pet_id = ?", petID)
+	if page.Cursor != nil {
+		// เทียบเป็น row value ทีเดียว ตรงกับลำดับ (date desc, id desc) พอดี
+		// เขียนแยกเป็น date < ? OR (date = ? AND id < ?) ก็ได้ผลเท่ากัน
+		// แต่แบบ row value อ่านง่ายกว่าและ PostgreSQL ใช้ index ได้เหมือนกัน
+		q = q.Where("(date, id) < (?, ?)", page.Cursor.Date, page.Cursor.ID)
+	}
+
+	var models []model.Water
+	if err := q.Order("date desc, id desc").Limit(page.Limit + 1).Find(&models).Error; err != nil {
+		return nil, false, err
+	}
+
+	hasMore := len(models) > page.Limit
+	if hasMore {
+		models = models[:page.Limit]
+	}
+
+	result := make([]domain.WaterLog, len(models))
+	for i, m := range models {
+		result[i] = m.ToDomain()
+	}
+	return result, hasMore, nil
+}

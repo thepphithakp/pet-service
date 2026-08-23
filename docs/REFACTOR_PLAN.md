@@ -1173,7 +1173,7 @@ ALTER TABLE pet.litter_logs VALIDATE CONSTRAINT fk_litter_logs_type;  -- ล็�
 |---|---|
 | 1 avatar ออกจาก list | ✅ ทำแล้ว — มีสวิตช์ `PET_LIST_INCLUDE_AVATAR` |
 | 2 avatar ออกจาก Postgres (MinIO/S3) | ⬜ ยังไม่ทำ |
-| 3 pagination | ⬜ ยังไม่ทำ — เปลี่ยนรูปแบบ response จะทำให้แอปพัง ต้องวางแผนร่วมกับแอป |
+| 3 pagination | ✅ ทำแล้ว — keyset แบบเข้ากันได้ย้อนหลัง |
 | 4 Preload แบบเลือกได้ | ⬜ ยังไม่ทำ |
 | 5 connection pool | ✅ ทำแล้ว 20/10/30m/5m |
 | 6 sslmode จาก env | ✅ มีอยู่แล้วตั้งแต่ Phase 1 (`DB_SSL_MODE`) |
@@ -1195,6 +1195,26 @@ ALTER TABLE pet.litter_logs VALIDATE CONSTRAINT fk_litter_logs_type;  -- ล็�
 เพราะแอปที่ใช้อยู่อ่านรูปจาก `avatarData` ในรายการ ถ้าตัดทันทีรูปจะหายจากแอป
 **ปิดเป็น `false` เมื่อแอปเปลี่ยนไปใช้ `GET /pets/:id/avatar` แล้วเท่านั้น**
 (แก้ที่ helm values อย่างเดียว ไม่ต้อง build ใหม่)
+
+**ข้อ 3 — pagination แบบเข้ากันได้ย้อนหลัง**
+
+ตัดสินจาก "มีพารามิเตอร์ `limit` หรือ `cursor` ในคำขอไหม" ไม่ใช่จากค่า default
+
+| คำขอ | รูปแบบที่คืน |
+|---|---|
+| `GET /pets/:id/water-logs` | JSON array แบบเดิมเป๊ะ |
+| `GET /pets/:id/water-logs?limit=20` | `{"data": [...], "nextCursor": "...", "hasMore": true}` |
+
+ใช้ keyset ไม่ใช่ offset เพราะ offset จะข้ามหรือซ้ำรายการเมื่อมี log ใหม่
+เพิ่มเข้ามาระหว่างที่ผู้ใช้กำลังเลื่อนดู ซึ่งเกิดตลอดกับรายการที่เรียงจากใหม่ไปเก่า
+
+cursor เป็น `(date, id)` ไม่ใช่ `date` อย่างเดียว — log วันเดียวกันมีได้หลายรายการ
+ถ้าใช้ `date` อย่างเดียวจะวนซ้ำที่เดิมไม่จบ
+
+รายละเอียดอื่น: ดึง `limit+1` แถวเพื่อรู้ว่ามีต่อไหมแทนการ `COUNT` ทั้งตาราง,
+เพดาน `limit` 200, `cursor`/`limit` ที่ผิดรูปแบบตอบ 400,
+และถ้าผู้เรียกไม่แบ่งหน้าแล้วได้เกิน 500 แถวจะ log warning ไว้
+(ไม่ตัดข้อมูลเงียบๆ) ดัชนี `(pet_id, date DESC, id DESC)` เพิ่มใน `V9`
 
 **ข้อ 9 — เป็นบั๊กที่ผู้ใช้เห็น ไม่ใช่แค่โค้ดไม่สม่ำเสมอ**
 

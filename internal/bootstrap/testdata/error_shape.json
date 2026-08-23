@@ -1,0 +1,65 @@
+{
+  "400_body_ไม่ถูกต้อง": {
+    "fields": [
+      "error:string",
+      "requestId:string"
+    ],
+    "status": 400
+  },
+  "400_cursor_ผิดรูปแบบ": {
+    "fields": [
+      "error:string",
+      "requestId:string"
+    ],
+    "status": 400
+  },
+  "400_id_ไม่ใช่_uuid": {
+    "fields": [
+      "error:string",
+      "requestId:string"
+    ],
+    "status": 400
+  },
+  "400_master_data_ไม่รู้จัก": {
+    "fields": [
+      "error:string",
+      "requestId:string"
+    ],
+    "status": 400
+  },
+  "400_validation_ไม่ผ่าน": {
+    "fields": [
+      "error:string",
+      "requestId:string"
+    ],
+    "status": 400
+  },
+  "401_ไม่มี_token": {
+    "fields": [
+      "error:string",
+      "requestId:string"
+    ],
+    "status": 401
+  },
+  "403_ไม่มีสิทธิ์": {
+    "fields": [
+      "error:string",
+      "requestId:string"
+    ],
+    "status": 403
+  },
+  "404_route_ไม่มีอยู่": {
+    "fields": [
+      "error:string",
+      "requestId:string"
+    ],
+    "status": 404
+  },
+  "404_ไม่พบสัตว์เลี้ยง": {
+    "fields": [
+      "error:string",
+      "requestId:string"
+    ],
+    "status": 404
+  }
+}

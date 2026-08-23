@@ -1471,12 +1471,63 @@ cursor เป็น `(date, id)` ไม่ใช่ `date` อย่างเด
 แก้ให้ FK ของ master data (`species`, `gender`, litter `type`) ตอบ 400
 พร้อมบอกว่าฟิลด์ไหนผิด ส่วน FK อื่นยังเป็น 500 ตามเดิมเพราะเป็นปัญหาของระบบจริง
 
+**Migration test — ทำแล้ว และจับของจริงได้ทันที**
+
+`vertex-migrations/scripts/verify-schema.sh` เทียบ schema ของ database เปล่า
+ที่รัน migration ทั้งหมด กับ snapshot ที่ดึงจาก production จริง
+(`pet/schema.golden.txt`) รันอัตโนมัติใน CI ของ repo นั้น
+
+🔴 **สิ่งที่มันเจอทันทีที่เขียนเสร็จ — production ใช้งานไม่ได้จริง**
+
+`caregiver_permissions` บน production มีคอลัมน์สองชุด
+
+| | |
+|---|---|
+| `pet_caregiver_id` / `pet_permission_id` | ชุดเก่าจาก AutoMigrate ยุคแรก |
+| `caregiver_model_id` / `permission_model_id` | ชุดที่โค้ดใช้จริง |
+
+ตอน struct ถูกเปลี่ยนชื่อ GORM สร้างคอลัมน์ชุดใหม่เพิ่มโดยไม่ลบของเก่า
+เพราะ AutoMigrate ไม่เคยลบอะไร
+
+`pet_permission_id` เป็น `NOT NULL` ไม่มี default แต่โค้ดไม่ได้เขียนคอลัมน์นี้
+ทุก `INSERT` จึงล้มด้วย `null value in column "pet_permission_id"`
+**= ตั้งสิทธิ์ให้ผู้ดูแลไม่ได้เลยบน production**
+
+และ primary key อยู่บนคอลัมน์เก่าที่มี default `gen_random_uuid()`
+ถ้า INSERT ผ่านได้ก็จะไม่กันสิทธิ์ซ้ำบนคอลัมน์ที่ใช้จริงอยู่ดี
+
+database เปล่าไม่มีปัญหานี้เพราะ V1 สร้างเฉพาะคอลัมน์ชุดใหม่ —
+**เทสต์ทั้งหมดของเรารันบน database เปล่า จึงไม่มีทางจับได้เลย**
+ต้องเทียบกับ production เท่านั้น
+
+แก้ด้วย V11 (ล้างคอลัมน์เก่า ตั้ง PK บนคอลัมน์ที่ใช้จริง) และ V12
+(ลบ index คอลัมน์เดียวที่ซ้ำกับ `(pet_id, date DESC)`)
+
+**บทเรียนซ้อน**: V11 รอบแรกเขียน `UPDATE` อ้างคอลัมน์เก่าตรงๆ ซึ่ง
+database เปล่าไม่มี → migration ล้มตอนติดตั้ง cluster ใหม่
+สคริปต์เดียวกันนี้จับได้ แต่หลังจาก deploy ไปแล้ว ต้องรัน `flyway repair`
+เพื่ออัปเดต checksum (และ repair ต้อง mount ทุก location ไม่งั้น Flyway
+จะ mark repeatable migration เป็น DELETED)
+
+**Golden test ของ error response — ทำแล้ว**
+
+`internal/bootstrap/testdata/error_shape.json` ตรึงรูปแบบของ error 9 กรณี
+(401/403/404 สองแบบ/400 ห้าแบบ) ทุกกรณีต้องเป็น
+`{"error": string, "requestId": string}` เท่านั้น
+
+แอป iOS อ่านสอง field นี้ (`APIErrorResponse` ใน `NetworkManager.swift`)
+ถ้ารูปแบบเปลี่ยนโดยไม่ตั้งใจแอปจะแสดงข้อความผิดหรือ decode ไม่ผ่าน
+
+มีสองชั้น: golden จับ "การเปลี่ยนแปลง" (อัปเดตด้วย `-update` ได้ถ้าตั้งใจ)
+ส่วน `TestErrorResponse_AlwaysHasContractFields` จับ "การผิดสัญญา"
+ซึ่งต้องไม่มีทางผ่านแม้อัปเดต golden แล้ว — รวมถึงกันไม่ให้ `cause`,
+`stack`, ชื่อ driver หรือ SQL หลุดออกไปกับ error
+
+ทดสอบแล้วว่าทั้งสองชั้นจับได้จริงโดยลองเติม field `cause` เข้าไป
+
 **ยังไม่ได้ทำ**
 
-- Migration test อัตโนมัติที่เทียบ schema ระหว่าง DB เปล่ากับ DB ที่ baseline จาก
-  dump prod — ทำด้วยมือหลายรอบแล้วตอน Phase 2/9/10 แต่ยังไม่เป็นเทสต์
-- Golden test ของ error response shape
-- coverage ของ `internal/adapter/repository` ยังพึ่ง integration test เป็นหลัก
+- ยังไม่มี snapshot ของ schema `auth` และ `event` (มีแค่ `pet`)
 
 ---
 

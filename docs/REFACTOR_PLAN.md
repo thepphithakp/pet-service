@@ -1322,10 +1322,39 @@ vertex
 ├── event  (event_logs, flyway_schema_history)
 └── public (ควรเหลือแค่ extension — ถ้าว่างแล้วคือทำถูก)
 ```
-- [ ] ตรวจขั้นสุดท้าย: `SELECT tablename FROM pg_tables WHERE schemaname='public';` → ต้องว่าง
+- [x] ตรวจขั้นสุดท้าย: `SELECT tablename FROM pg_tables WHERE schemaname='public';` → **ว่างแล้ว**
+      (ไม่มีทั้งตาราง extension และ function เหลือใน public เลย)
+- [x] แต่ละ service `SELECT` ตารางของ service อื่นไม่ได้ — พิสูจน์ด้วยการลองจริง 2026-08-23
+
+      | user | pet.pets | auth.users | event.event_logs |
+      |---|---|---|---|
+      | `pet_app`   | อ่านได้ | 🔒 denied | 🔒 denied |
+      | `auth_app`  | 🔒 denied | อ่านได้ | 🔒 denied |
+      | `event_app` | 🔒 denied | 🔒 denied | อ่านได้ |
+
 - [ ] เอา `public` ออกจาก `search_path` ของทุก service
-- [ ] `REVOKE ALL ON SCHEMA public FROM pet_app, auth_app, event_app;`
-- [ ] แต่ละ service `SELECT` ตารางของ service อื่นไม่ได้ (พิสูจน์ด้วยการลองจริง)
+      ปลอดภัยที่จะทำแล้วเพราะ public ว่างสนิท แต่ต้อง redeploy ทั้งสาม service
+      เก็บไว้ทำรวมกับรอบ deploy ถัดไป — grant เป็นตัวคุมจริงอยู่แล้ว (ตารางข้างบน)
+      ส่วนนี้เป็น defense-in-depth
+
+**สิ่งที่ทำเพิ่มนอกเหนือจากแผน — auth ของ event-service**
+
+แผนเดิมของเฟสนี้พูดถึงแค่ schema กับ Flyway แต่ตอนลงมือพบว่า
+`GET /api/v1/admin/events` **ไม่มีการตรวจสิทธิ์อะไรเลย** ใครก็ตามบนอินเทอร์เน็ต
+ดึง event log ทั้งหมดได้ ซึ่งมี user id และ pet id ของผู้ใช้จริง
+(ยืนยันด้วยการยิงจริงผ่าน ingress) ส่วน `POST /api/v1/events` ก็เปิดโล่งเช่นกัน
+คือยิง event ปลอมเข้าระบบได้ ทำให้ audit log ที่มีไว้ตรวจสอบเชื่อถือไม่ได้
+
+- `GET /api/v1/admin/events` → JWT (คีย์ชุดเดียวกับ auth-service) + ต้องเป็น SUPER_ADMIN
+- `POST /api/v1/events` → service token เทียบแบบ constant-time
+  ไม่ใช้ JWT ของผู้ใช้เพราะการส่ง event เป็น fire-and-forget และต่อไปจะเป็น
+  outbox ที่ส่งทีหลัง token ของผู้ใช้อาจหมดอายุไปแล้วตอนส่งจริง
+- `event_app` แทน `vertex_admin` — เดิม service ที่แค่ต้องเขียน log
+  ต่อ database ด้วย superuser จึงอ่านและลบข้อมูลของ pet และ auth ได้หมด
+
+⏳ **ยังไม่ได้ deploy** — ยังไม่มี repo `vertex-event-service` บน GitHub
+   จึงยังไม่มี CI/CD ที่จะ build image ขึ้น ghcr.io ให้คลัสเตอร์ดึงไปใช้
+   โค้ดพร้อมแล้วและ commit ไว้ในเครื่องแล้ว
 
 ---
 

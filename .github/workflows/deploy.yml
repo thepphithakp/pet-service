@@ -163,7 +163,7 @@ jobs:
       # นับเฉพาะ CRITICAL/HIGH ที่มีทางแก้แล้ว (ignore-unfixed)
       # ไม่งั้น CVE ที่ยังไม่มี patch จะทำให้ deploy ไม่ได้ทั้งที่ทำอะไรไม่ได้
       - name: Trivy scan
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${{ github.sha }}
           format: table

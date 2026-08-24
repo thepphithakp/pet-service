@@ -1,12 +1,15 @@
 package middleware
 
 import (
+	"errors"
 	"log/slog"
 	"os"
 	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+
+	"github.com/vertex/pet-service/pkg/apperror"
 )
 
 // LogConfig ควบคุมความละเอียดของ access log
@@ -66,7 +69,23 @@ func NewAccessLog(cfg LogConfig) fiber.Handler {
 		start := time.Now()
 		err := c.Next()
 
+		// 🔴 อ่าน c.Response().StatusCode() ตรงๆ ไม่พอเมื่อ handler
+		// return error object (apperror.AppError, fiber.Error) แทนที่จะ
+		// เรียก c.Status().JSON() เอง
+		//
+		// Fiber เรียก ErrorHandler กลาง "หลังจาก" middleware chain (รวม
+		// access log นี้) unwind กลับไปแล้ว ไม่ใช่ระหว่าง c.Next() —
+		// ดังนั้นถ้า handler แค่ return err การอ่าน status ตรงนี้จะยังเป็น
+		// ค่า default 200 ของ Fiber อยู่ ทั้งที่ผู้เรียกจริงจะได้ status
+		// ที่ ErrorHandler กำหนดทีหลัง (ซึ่งส่วนใหญ่ในโค้ดนี้คือ error
+		// จาก apperror.* — วิธี return error ที่ handler ส่วนใหญ่ใช้)
+		//
+		// แก้โดยเดาผลลัพธ์ที่ ErrorHandler จะให้ล่วงหน้า ด้วย logic
+		// เดียวกับใน error_handler.go ทุกประการ
 		status := c.Response().StatusCode()
+		if err != nil {
+			status = resolveErrStatus(err)
+		}
 
 		// endpoint คือ route pattern ที่ลงทะเบียนไว้ ("/api/v1/pets/:id")
 		// ต่างจาก path ที่เป็นค่าจริงที่ผู้ใช้ยิงมา ("/api/v1/pets/86715873-...")
@@ -165,4 +184,19 @@ func SetupLogger(level string) {
 		lvl = slog.LevelInfo
 	}
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: lvl})))
+}
+
+// resolveErrStatus เดา HTTP status ที่ ErrorHandler จะกำหนดให้ error นี้
+// ต้องตรงกับ logic ใน error_handler.go ทุกประการ ไม่งั้น access log
+// กับ response จริงจะไม่ตรงกัน
+func resolveErrStatus(err error) int {
+	var appErr *apperror.AppError
+	if apperror.IsAppError(err, &appErr) {
+		return appErr.Code
+	}
+	var fe *fiber.Error
+	if errors.As(err, &fe) {
+		return fe.Code
+	}
+	return fiber.StatusInternalServerError
 }

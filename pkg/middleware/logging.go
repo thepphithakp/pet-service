@@ -66,10 +66,24 @@ func NewAccessLog(cfg LogConfig) fiber.Handler {
 		start := time.Now()
 		err := c.Next()
 
+		status := c.Response().StatusCode()
+
+		// endpoint คือ route pattern ที่ลงทะเบียนไว้ ("/api/v1/pets/:id")
+		// ต่างจาก path ที่เป็นค่าจริงที่ผู้ใช้ยิงมา ("/api/v1/pets/86715873-...")
+		//
+		// แยกสองฟิลด์นี้เพราะ path มี UUID ปนอยู่ ทำให้ aggregate ตาม
+		// endpoint ใน Discover ไม่ได้เลย (ทุกค่าไม่ซ้ำกันสักอัน)
+		// endpoint ไม่มี UUID จึงกลุ่มได้ว่า endpoint ไหนพังบ่อยที่สุด
+		endpoint := c.Path()
+		if r := c.Route(); r != nil && r.Path != "" {
+			endpoint = r.Path
+		}
+
 		attrs := []any{
 			slog.String("method", c.Method()),
 			slog.String("path", c.Path()),
-			slog.Int("status", c.Response().StatusCode()),
+			slog.String("endpoint", endpoint),
+			slog.Int("status", status),
 			slog.Duration("latency", time.Since(start)),
 			slog.String("request_id", c.Get(HeaderRequestID)),
 			slog.String("ip", c.IP()),
@@ -84,11 +98,21 @@ func NewAccessLog(cfg LogConfig) fiber.Handler {
 			attrs = append(attrs, slog.String("device_id", v))
 		}
 
-		if cfg.LogBody {
+		// 🔴 log body เสมอเมื่อ error (status >= 400) ไม่ต้องเปิด cfg.LogBody
+		//
+		// ตอน investigate ปัญหาจริง (VT-69) สิ่งที่ขาดคือ body ตอน error
+		// ไม่ใช่ตอนทำงานปกติ — เปิด log body ทุก request จะทำให้ log บวม
+		// เร็วมากเพราะ traffic ปกติมากกว่า error หลายเท่า และเพิ่มความเสี่ยง
+		// ข้อมูลส่วนตัวไหลเข้า log โดยไม่จำเป็น จึงจำกัดไว้เฉพาะตอนพังเท่านั้น
+		//
+		// cfg.LogBody ยังใช้ได้เหมือนเดิมสำหรับเปิด log ทุก request ตอน
+		// debug ที่ non-production
+		logBody := cfg.LogBody || status >= 400
+		if logBody {
 			if b := truncate(maskBody(c.Body()), cfg.MaxBodyBytes); b != "" {
 				attrs = append(attrs, slog.String("req_body", b))
 			}
-			// ⚠️ ไม่ log response body ของ list endpoint
+			// ⚠️ ไม่ log response body ของ list endpoint แม้จะ error
 			// เพราะ GET /pets คืนสัตว์เลี้ยงทุกตัวพร้อม avatar
 			if !isListPath(c.Path()) {
 				if b := truncate(maskBody(c.Response().Body()), cfg.MaxBodyBytes); b != "" {
@@ -98,10 +122,10 @@ func NewAccessLog(cfg LogConfig) fiber.Handler {
 		}
 
 		level := slog.LevelInfo
-		switch code := c.Response().StatusCode(); {
-		case code >= 500:
+		switch {
+		case status >= 500:
 			level = slog.LevelError
-		case code >= 400:
+		case status >= 400:
 			level = slog.LevelWarn
 		}
 		slog.LogAttrs(c.UserContext(), level, "http_request", toAttrs(attrs)...)

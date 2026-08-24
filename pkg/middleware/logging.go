@@ -4,6 +4,7 @@ import (
 	"errors"
 	"log/slog"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 
@@ -87,16 +88,19 @@ func NewAccessLog(cfg LogConfig) fiber.Handler {
 			status = resolveErrStatus(err)
 		}
 
-		// endpoint คือ route pattern ที่ลงทะเบียนไว้ ("/api/v1/pets/:id")
-		// ต่างจาก path ที่เป็นค่าจริงที่ผู้ใช้ยิงมา ("/api/v1/pets/86715873-...")
+		// endpoint คือ path จริงที่แทน UUID ด้วย :id แล้ว เช่น
+		// "/api/v1/pets/86715873-..." กลายเป็น "/api/v1/pets/:id"
 		//
-		// แยกสองฟิลด์นี้เพราะ path มี UUID ปนอยู่ ทำให้ aggregate ตาม
-		// endpoint ใน Discover ไม่ได้เลย (ทุกค่าไม่ซ้ำกันสักอัน)
-		// endpoint ไม่มี UUID จึงกลุ่มได้ว่า endpoint ไหนพังบ่อยที่สุด
-		endpoint := c.Path()
-		if r := c.Route(); r != nil && r.Path != "" {
-			endpoint = r.Path
-		}
+		// 🔴 เดิมใช้ c.Route().Path (route pattern ที่ Fiber ลงทะเบียนไว้)
+		// แต่ auth middleware ของ pet-service ถูกผูกไว้ที่ระดับ group
+		// (app.Group("/api/v1", authMW)) พอ auth ปฏิเสธก่อนถึง route ย่อย
+		// Fiber ยังไม่ทันเดินไปถึง route เต็ม c.Route() จึงได้แค่ path
+		// ของ group ("/api/v1") ไม่ใช่ "/api/v1/pets/:id" — เกิดกับทุก
+		// request ที่ถูกปฏิเสธที่ auth ซึ่งเป็นสัดส่วนใหญ่ของ error จริง
+		//
+		// แก้ด้วยการ normalize UUID ออกจาก path ตรงๆ แทน ไม่พึ่งว่า
+		// Fiber จะ resolve ไปถึง route ไหนแล้วตอนที่ error เกิด
+		endpoint := normalizeEndpoint(c.Path())
 
 		attrs := []any{
 			slog.String("method", c.Method()),
@@ -199,4 +203,21 @@ func resolveErrStatus(err error) int {
 		return fe.Code
 	}
 	return fiber.StatusInternalServerError
+}
+
+// uuidSegment จับ UUID มาตรฐาน (8-4-4-4-12 hex) ไม่สนตัวพิมพ์ใหญ่เล็ก
+var uuidSegment = regexp.MustCompile(`(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
+
+// normalizeEndpoint แทนที่ segment ที่เป็น UUID ด้วย ":id"
+//
+// ทำงานอิสระจากการ resolve route ของ Fiber โดยสิ้นเชิง จึงถูกต้องเสมอ
+// ไม่ว่า request จะถูกปฏิเสธที่ชั้นไหนของ middleware chain
+func normalizeEndpoint(path string) string {
+	parts := strings.Split(path, "/")
+	for i, p := range parts {
+		if uuidSegment.MatchString(p) {
+			parts[i] = ":id"
+		}
+	}
+	return strings.Join(parts, "/")
 }

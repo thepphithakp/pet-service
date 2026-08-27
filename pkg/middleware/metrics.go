@@ -6,6 +6,7 @@ import (
 
 	"github.com/gofiber/adaptor/v2"
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/utils"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
@@ -75,11 +76,29 @@ func init() {
 // NewMetrics คืน middleware ที่เก็บ metric ของทุก request
 func NewMetrics() fiber.Handler {
 	return func(c *fiber.Ctx) error {
+		// ไม่นับตัวเอง — Prometheus ยิงทุก 30 วินาที ถ้านับด้วย
+		// กราฟจะมี traffic พื้นหลังตลอดเวลาทั้งที่ไม่มีใครใช้งานจริง
+		if c.Path() == "/metrics" {
+			return c.Next()
+		}
+
+		// ⚠️ ต้องคัดลอก string ที่ได้จาก c.Method() ก่อนเสมอ
+		//
+		// Fiber คืน string ที่ชี้ไปยัง buffer ของ request ซึ่งถูกใช้ซ้ำกับ
+		// request ถัดไป ส่วน Prometheus เก็บ string นั้นไว้เป็น key ใน map
+		// ตลอดอายุของ process — พอ buffer ถูกเขียนทับ key ที่เก็บไว้ก็เปลี่ยนตาม
+		//
+		// เกิดขึ้นจริงบน production: label กลายเป็น "GETETE" (GET ทับด้วยเศษ
+		// ของ DELETE) แล้วเกิด label ซ้ำจน /metrics ตอบ 500 ทั้ง endpoint
+		// ผลคือ Prometheus scrape ไม่ผ่านเลยแม้แต่ครั้งเดียว โดยที่ ServiceMonitor
+		// ยังเขียวอยู่และไม่มีอะไรฟ้อง
+		method := utils.CopyString(c.Method())
+
 		httpRequestsInFlight.Inc()
 		defer httpRequestsInFlight.Dec()
 
 		timer := prometheus.NewTimer(prometheus.ObserverFunc(func(v float64) {
-			httpRequestDuration.WithLabelValues(c.Method(), routeLabel(c)).Observe(v)
+			httpRequestDuration.WithLabelValues(method, routeLabel(c)).Observe(v)
 		}))
 
 		err := c.Next()
@@ -92,7 +111,7 @@ func NewMetrics() fiber.Handler {
 				status = fe.Code
 			}
 		}
-		httpRequestsTotal.WithLabelValues(c.Method(), routeLabel(c), strconv.Itoa(status)).Inc()
+		httpRequestsTotal.WithLabelValues(method, routeLabel(c), strconv.Itoa(status)).Inc()
 		timer.ObserveDuration()
 
 		return err

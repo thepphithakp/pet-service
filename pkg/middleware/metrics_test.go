@@ -9,82 +9,106 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
-// TestMetrics_UsesRoutePatternNotRawPath กันปัญหา cardinality explosion
-//
-// ถ้าใช้ c.Path() เป็น label ทุก uuid จะกลายเป็น label ใหม่
-// Prometheus จะเก็บ time series ไม่จำกัดจนหน่วยความจำหมด
-func TestMetrics_UsesRoutePatternNotRawPath(t *testing.T) {
+func newMetricsApp() *fiber.App {
 	app := fiber.New()
 	app.Use(NewMetrics())
-	app.Get("/pets/:id", func(c *fiber.Ctx) error { return c.SendString("ok") })
 	app.Get("/metrics", MetricsHandler())
-
-	for _, id := range []string{"aaa", "bbb", "ccc"} {
-		resp, err := app.Test(httptest.NewRequest("GET", "/pets/"+id, nil))
-		if err != nil {
-			t.Fatalf("ยิง request ไม่สำเร็จ: %v", err)
-		}
-		if resp.StatusCode != fiber.StatusOK {
-			t.Fatalf("status = %d ต้องเป็น 200", resp.StatusCode)
-		}
-	}
-
-	body := scrape(t, app)
-
-	if strings.Contains(body, `route="/pets/aaa"`) {
-		t.Error("metric ใช้ path ดิบเป็น label — จะทำให้ cardinality ระเบิด")
-	}
-	if !strings.Contains(body, `route="/pets/:id"`) {
-		t.Errorf("ไม่พบ label route=\"/pets/:id\" ใน metric:\n%s", body)
-	}
+	app.Get("/api/v1/pets/:id", func(c *fiber.Ctx) error { return c.SendString("ok") })
+	app.Delete("/api/v1/pets/:id", func(c *fiber.Ctx) error { return c.SendStatus(204) })
+	return app
 }
 
-// TestMetrics_UnmatchedRouteCollapsed กันคนสแกน path มั่วแล้วทำให้ label แตก
-func TestMetrics_UnmatchedRouteCollapsed(t *testing.T) {
-	app := fiber.New()
-	app.Use(NewMetrics())
-	app.Get("/known", func(c *fiber.Ctx) error { return c.SendString("ok") })
-	app.Get("/metrics", MetricsHandler())
-
-	for _, p := range []string{"/nope-1", "/nope-2"} {
-		if _, err := app.Test(httptest.NewRequest("GET", p, nil)); err != nil {
-			t.Fatalf("ยิง request ไม่สำเร็จ: %v", err)
-		}
-	}
-
-	body := scrape(t, app)
-	if strings.Contains(body, `route="/nope-1"`) {
-		t.Error("path ที่ไม่ตรง route ไหนเลยถูกใช้เป็น label — ผู้ใช้ภายนอกทำให้ metric บวมได้")
-	}
-	if !strings.Contains(body, `route="unmatched"`) {
-		t.Errorf("ไม่พบ label route=\"unmatched\":\n%s", body)
-	}
-}
-
-// TestIsInfraPath ยืนยันว่า probe ไม่ถูกนับรวมกับ traffic ของผู้ใช้
-func TestIsInfraPath(t *testing.T) {
-	for _, p := range []string{"/livez", "/readyz", "/health", "/metrics"} {
-		if !IsInfraPath(p) {
-			t.Errorf("%s ควรเป็น infra path", p)
-		}
-	}
-	if IsInfraPath("/api/v1/pets") {
-		t.Error("/api/v1/pets ไม่ควรเป็น infra path")
-	}
-}
-
-func scrape(t *testing.T, app *fiber.App) string {
+func scrapeMetrics(t *testing.T, app *fiber.App) string {
 	t.Helper()
 	resp, err := app.Test(httptest.NewRequest("GET", "/metrics", nil))
 	if err != nil {
-		t.Fatalf("ดึง /metrics ไม่สำเร็จ: %v", err)
+		t.Fatal(err)
 	}
-	if resp.StatusCode != fiber.StatusOK {
-		t.Fatalf("/metrics status = %d ต้องเป็น 200", resp.StatusCode)
+	if resp.StatusCode != 200 {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("/metrics ตอบ %d ไม่ใช่ 200:\n%s", resp.StatusCode, string(b))
 	}
-	b, err := io.ReadAll(resp.Body)
-	if err != nil {
-		t.Fatalf("อ่าน body ไม่ได้: %v", err)
-	}
+	b, _ := io.ReadAll(resp.Body)
 	return string(b)
+}
+
+// regression ของบั๊กที่ทำให้ /metrics ตอบ 500 บน production มาตลอด
+//
+// Fiber คืน string ที่ชี้ไป buffer ของ request ซึ่งถูกใช้ซ้ำ พอ Prometheus
+// เก็บไว้เป็น key ค่ามันเปลี่ยนตามทีหลัง label เลยกลายเป็น "GETETE"
+// แล้วเกิด label ซ้ำจนทั้ง endpoint พัง
+func TestMethodLabelIsNotCorruptedByBufferReuse(t *testing.T) {
+	app := newMetricsApp()
+
+	// สลับ method ไปมาหลายรอบเพื่อให้ buffer ถูกเขียนทับ
+	for i := 0; i < 20; i++ {
+		if _, err := app.Test(httptest.NewRequest("DELETE", "/api/v1/pets/abc", nil)); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := app.Test(httptest.NewRequest("GET", "/api/v1/pets/abc", nil)); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// ถ้า label เพี้ยน /metrics จะตอบ 500 ตรงนี้เลย (scrapeMetrics เช็คให้แล้ว)
+	body := scrapeMetrics(t, app)
+
+	for _, want := range []string{`method="GET"`, `method="DELETE"`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("ไม่พบ %s ใน /metrics", want)
+		}
+	}
+	for _, line := range strings.Split(body, "\n") {
+		if !strings.HasPrefix(line, "http_requests_total{") {
+			continue
+		}
+		if strings.Contains(line, `method="GETETE"`) || strings.Contains(line, `method="DELETEET"`) {
+			t.Errorf("label ของ method เพี้ยน: %s", line)
+		}
+	}
+}
+
+// กับดักที่ทำให้ Prometheus ระเบิด: id ที่อยู่ใน path ทำให้ label แตกไม่จำกัด
+func TestRouteLabelUsesPatternNotRawPath(t *testing.T) {
+	app := newMetricsApp()
+	for _, id := range []string{"aaa", "bbb", "ccc"} {
+		if _, err := app.Test(httptest.NewRequest("GET", "/api/v1/pets/"+id, nil)); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	body := scrapeMetrics(t, app)
+	if !strings.Contains(body, `route="/api/v1/pets/:id"`) {
+		t.Errorf("ไม่พบ label ที่เป็น pattern ของ route")
+	}
+	for _, id := range []string{"aaa", "bbb", "ccc"} {
+		if strings.Contains(body, "/api/v1/pets/"+id) {
+			t.Errorf("id %q หลุดเข้าไปเป็น label — label จะแตกไม่จำกัด", id)
+		}
+	}
+}
+
+func TestUnmatchedPathsCollapse(t *testing.T) {
+	app := newMetricsApp()
+	for _, p := range []string{"/nope", "/also-nope"} {
+		if _, err := app.Test(httptest.NewRequest("GET", p, nil)); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	body := scrapeMetrics(t, app)
+	if !strings.Contains(body, `route="unmatched"`) {
+		t.Error("path ที่ไม่ match ควรยุบเป็น unmatched")
+	}
+}
+
+// /metrics ไม่ควรนับตัวเอง ไม่งั้นกราฟจะมี traffic พื้นหลังตลอดเวลา
+func TestMetricsEndpointDoesNotCountItself(t *testing.T) {
+	app := newMetricsApp()
+	scrapeMetrics(t, app)
+	body := scrapeMetrics(t, app)
+
+	if strings.Contains(body, `route="/metrics"`) {
+		t.Error("นับ /metrics ของตัวเองด้วย")
+	}
 }

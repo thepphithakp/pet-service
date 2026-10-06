@@ -31,6 +31,7 @@ type handlers struct {
 	litter     *handler.LitterHandler
 	water      *handler.WaterHandler
 	masterData *handler.MasterDataHandler
+	internal   *handler.InternalHandler
 }
 
 // wire ประกอบ repository → service → handler
@@ -75,6 +76,7 @@ func wire(db *gorm.DB, cfg config.Config) (handlers, *event.HTTPEventPublisher, 
 		litter:     handler.NewLitterHandler(litterService),
 		water:      handler.NewWaterHandler(waterService),
 		masterData: handler.NewMasterDataHandler(masterDataService, masterDataService),
+		internal:   handler.NewInternalHandler(petRepo),
 	}, eventPublisher, worker
 }
 
@@ -114,6 +116,6 @@ func NewApp(db *gorm.DB, cfg config.Config, auth middleware.AuthConfig) (*fiber.
 
 	h, publisher, worker := wire(db, cfg)
 	health := NewHealth(db)
-	registerRoutes(app, h, auth, health)
+	registerRoutes(app, h, auth, health, cfg.ChatServiceToken)
 	return app, health, publisher, worker
 }

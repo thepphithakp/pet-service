@@ -7,7 +7,7 @@ import (
 )
 
 // registerRoutes รวมการประกาศ route ทั้งหมดไว้ที่เดียว
-func registerRoutes(app *fiber.App, h handlers, auth middleware.AuthConfig, health *Health) {
+func registerRoutes(app *fiber.App, h handlers, auth middleware.AuthConfig, health *Health, chatServiceToken string) {
 	// Public — ไม่ต้อง auth
 	//
 	// /livez  ไม่เช็ค dependency เลย — ถ้าเช็ค DB แล้ว DB ล่ม k8s จะฆ่าทุก pod
@@ -43,4 +43,17 @@ func registerRoutes(app *fiber.App, h handlers, auth middleware.AuthConfig, heal
 	admin := app.Group("/api/v1/admin", authMW)
 	h.pet.RegisterAdminRoutes(admin)
 	h.masterData.RegisterAdminRoutes(admin)
+
+	// Internal — service อื่นเรียก (ตอนนี้คือ chat-service) ไม่ใช่ผู้ใช้
+	// ตรง ๆ จึงไม่มี JWT ให้ตรวจ ใช้ X-Service-Token แทน
+	//
+	// ⚠️ ต้องเป็น path ที่ไม่ขึ้นต้นด้วย "/api/v1" เด็ดขาด — group
+	// app.Group("/api/v1", authMW) ด้านบนผูก middleware ด้วย string-prefix
+	// match ของ Fiber ซึ่งครอบทุก path ที่ขึ้นต้นด้วย "/api/v1" ไม่ว่าจะ
+	// ประกาศผ่าน group ไหนก็ตาม ถ้าเผลอใช้ "/api/v1/internal/..." ตรงนี้จะ
+	// โดน JWT middleware ครอบไปด้วย ตอบ 401 "ต้องมี Authorization: Bearer"
+	// แทนที่จะเช็ค X-Service-Token (เจอบั๊กนี้มาแล้วจริงตอนทำ
+	// notification-service — ดู vertex-notification-service bootstrap/app.go)
+	internal := app.Group("/internal/v1", middleware.NewServiceToken(chatServiceToken))
+	h.internal.RegisterRoutes(internal)
 }

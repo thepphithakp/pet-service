@@ -12,6 +12,7 @@ func setDBEnv(t *testing.T) {
 	t.Setenv("DB_PORT", "5432")
 	t.Setenv("DB_USER", "vertex")
 	t.Setenv("DB_NAME", "vertex")
+	t.Setenv("CHAT_SERVICE_TOKEN", "test-chat-service-token")
 }
 
 func TestLoad_Defaults(t *testing.T) {

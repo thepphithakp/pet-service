@@ -59,6 +59,14 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.event.ingestTokenSecret }}
                   key: token
+            - name: CHAT_SERVICE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  # ⚠️ ต้องเป็น Secret เดียวกับที่ chat-service ถือฝั่งเรียก
+                  # (PET_SERVICE_TOKEN ของมัน) — endpoint นี้ pet-service เป็น
+                  # ฝ่ายตรวจ ไม่ใช่ฝ่ายส่งแบบ EVENT_INGEST_TOKEN ด้านบน
+                  name: {{ .Values.chat.serviceTokenSecret }}
+                  key: token
             - name: PET_LIST_INCLUDE_AVATAR
               value: {{ .Values.petList.includeAvatar | quote }}
             - name: DB_MAX_OPEN_CONNS

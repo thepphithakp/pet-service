@@ -249,6 +249,15 @@ jwt:
 event:
   ingestTokenSecret: event-ingest-token
 
+# --- Chat service -----------------------------------------------------------
+#
+# ตรงข้ามกับ event ด้านบน — ที่นี่ pet-service เป็นฝ่ายตรวจ ไม่ใช่ฝ่ายส่ง
+# chat-service เรียก GET /internal/v1/pets/:petId/link มาถามว่าผู้ใช้สองคน
+# มีสัตว์เลี้ยงร่วมกันไหมก่อนเปิดบทสนทนาใหม่ — ต้องเป็น Secret เดียวกับที่
+# chat-service ถือ (PET_SERVICE_TOKEN ของมัน)
+chat:
+  serviceTokenSecret: pet-service-token
+
 # --- Pet list / avatar ----------------------------------------------------
 #
 # GET /pets เดิมส่ง avatarData ไปกับทุกรายการ ซึ่งบน production แปลว่า

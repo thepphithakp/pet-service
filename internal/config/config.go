@@ -37,6 +37,13 @@ type Config struct {
 	// แต่ request หลักของผู้ใช้ยังทำงานปกติ (การส่ง event เป็น fire-and-forget)
 	EventIngestToken string
 
+	// ChatServiceToken ตรงข้ามกับ EventIngestToken — token นี้ pet-service เป็น
+	// ฝ่าย "ตรวจ" ไม่ใช่ฝ่ายส่ง ใช้กับ GET /internal/v1/pets/:petId/link ที่
+	// chat-service เรียกมาถามว่าสองคนมีสัตว์เลี้ยงร่วมกันไหม ต้องเป็นค่าเดียว
+	// กับ PET_SERVICE_TOKEN ฝั่ง chat-service — บังคับให้ตั้ง (ไม่ปล่อยว่างเหมือน
+	// EventIngestToken) เพราะ endpoint นี้คืนข้อมูลความสัมพันธ์ของผู้ใช้จริง
+	ChatServiceToken string
+
 	Log      LogConfig
 	Shutdown ShutdownConfig
 }
@@ -164,6 +171,7 @@ func Load() (Config, error) {
 		},
 		EventServiceURL:  env("EVENT_SERVICE_URL", "http://event-service.vertex.svc.cluster.local:4002"),
 		EventIngestToken: os.Getenv("EVENT_INGEST_TOKEN"),
+		ChatServiceToken: os.Getenv("CHAT_SERVICE_TOKEN"),
 		// default = true เพื่อไม่ให้แอปที่ใช้อยู่พังตอน deploy
 		PetListIncludeAvatar: envBool("PET_LIST_INCLUDE_AVATAR", true),
 		OutboxInterval:       envDuration("OUTBOX_INTERVAL", 5*time.Second),
@@ -184,10 +192,11 @@ func Load() (Config, error) {
 func (c Config) Validate() error {
 	var missing []string
 	for name, v := range map[string]string{
-		"DB_HOST": c.DB.Host,
-		"DB_PORT": c.DB.Port,
-		"DB_USER": c.DB.User,
-		"DB_NAME": c.DB.Name,
+		"DB_HOST":            c.DB.Host,
+		"DB_PORT":            c.DB.Port,
+		"DB_USER":            c.DB.User,
+		"DB_NAME":            c.DB.Name,
+		"CHAT_SERVICE_TOKEN": c.ChatServiceToken,
 	} {
 		if strings.TrimSpace(v) == "" {
 			missing = append(missing, name)

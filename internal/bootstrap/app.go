@@ -61,6 +61,7 @@ func wire(db *gorm.DB, cfg config.Config) (handlers, *event.HTTPEventPublisher, 
 	litterService := application.NewLitterService(litterRepo, eventRecorder, authz)
 	waterService := application.NewWaterService(waterRepo, eventRecorder, authz)
 	masterDataService := application.NewMasterDataService(masterDataRepo, permissionRepo, authz)
+	petLinkService := application.NewPetLinkService(petRepo)
 
 	// Input adapters
 	worker := application.
@@ -76,7 +77,7 @@ func wire(db *gorm.DB, cfg config.Config) (handlers, *event.HTTPEventPublisher, 
 		litter:     handler.NewLitterHandler(litterService),
 		water:      handler.NewWaterHandler(waterService),
 		masterData: handler.NewMasterDataHandler(masterDataService, masterDataService),
-		internal:   handler.NewInternalHandler(petRepo),
+		internal:   handler.NewInternalHandler(petLinkService),
 	}, eventPublisher, worker
 }
 

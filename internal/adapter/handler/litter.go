@@ -12,9 +12,6 @@ import (
 	"github.com/vertex/pet-service/pkg/apperror"
 )
 
-// maxBatchSize จำกัดขนาด batch เพื่อไม่ให้ request เดียวกินหน่วยความจำจนล้ม
-const maxBatchSize = 500
-
 // LitterHandler handles HTTP requests for litter log operations.
 type LitterHandler struct {
 	useCase port.LitterUseCase
@@ -94,10 +91,9 @@ func (h *LitterHandler) CreateBatch(c *fiber.Ctx) error {
 	if err := c.BodyParser(&reqs); err != nil {
 		return apperror.BadRequest("Invalid request body (expected array)", err)
 	}
-	if len(reqs) > maxBatchSize {
-		return apperror.BadRequest(fmt.Sprintf("ส่งได้สูงสุด %d รายการต่อครั้ง", maxBatchSize))
-	}
-
+	// ไม่เช็คขนาด batch ที่นี่แล้ว — LitterService.CreateBatch เป็นคนเดียว
+	// ที่รู้ขีดจำกัด (MaxLitterBatchSize) กันไม่ให้ค่าที่นี่เพี้ยนไปจากที่
+	// service บังคับจริง และ caller ที่ไม่ผ่าน handler นี้ก็ถูกจำกัดด้วย
 	logs := make([]domain.LitterLog, len(reqs))
 	for i, r := range reqs {
 		if err := r.Validate(); err != nil {

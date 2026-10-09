@@ -26,6 +26,16 @@ type PetUseCase interface {
 	Delete(ctx context.Context, id uuid.UUID) error
 }
 
+// PetLinkUseCase is the driving port for the internal pet-link query — asked
+// by other services (chat-service) to check whether two users are both
+// related to the same pet. Deliberately separate from PetUseCase: there is
+// no single acting user from a JWT context to run through Authorizer, just
+// two arbitrary userIDs to compare (the caller is trusted via service token,
+// not a per-actor permission check).
+type PetLinkUseCase interface {
+	IsLinked(ctx context.Context, petID, userA, userB uuid.UUID) (bool, error)
+}
+
 // CaregiverUseCase is the driving port for caregiver operations.
 type CaregiverUseCase interface {
 	GetForPet(ctx context.Context, petID uuid.UUID) ([]domain.PetCaregiver, error)

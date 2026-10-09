@@ -2,12 +2,18 @@ package application
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/google/uuid"
 
 	"github.com/vertex/pet-service/internal/domain"
 	"github.com/vertex/pet-service/internal/port"
 )
+
+// MaxLitterBatchSize จำกัดจำนวนรายการต่อ batch เพื่อไม่ให้ caller เดียวยิง
+// DB write รัวเกินไปในรอบเดียว — เดิมเช็คแค่ที่ LitterHandler เท่านั้น ทำให้
+// caller ที่ไม่ผ่าน HTTP (gRPC, cron, message consumer ในอนาคต) เลี่ยงได้
+const MaxLitterBatchSize = 500
 
 // LitterService implements port.LitterUseCase.
 type LitterService struct {
@@ -91,6 +97,10 @@ func (s *LitterService) CreateBatch(ctx context.Context, logs []domain.LitterLog
 	// C-7: gorm.Create กับ slice ว่างคืน ErrEmptySlice → 500 ปิดไว้ตั้งแต่ต้นทาง
 	if len(logs) == 0 {
 		return []domain.LitterLog{}, nil
+	}
+	// ตรวจอีกชั้นเผื่อมี caller อื่นเรียกตรงๆ ไม่ผ่าน LitterHandler
+	if len(logs) > MaxLitterBatchSize {
+		return nil, fmt.Errorf("%w: ส่งได้สูงสุด %d รายการต่อครั้ง", domain.ErrValidation, MaxLitterBatchSize)
 	}
 	// ทุกแถวต้องเป็นของสัตว์เลี้ยงตัวเดียวกัน (handler เซ็ตจาก path ให้แล้ว)
 	// ตรวจอีกชั้นเผื่อมี caller อื่นเรียกตรงๆ

@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -10,37 +11,30 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 
-	"github.com/vertex/pet-service/internal/domain"
+	"github.com/vertex/pet-service/pkg/middleware"
 )
 
-type fakeAccessChecker struct {
-	access map[uuid.UUID]domain.PetAccess // keyed by userID
+type fakePetLinkUseCase struct {
+	linked bool
+	err    error
 }
 
-func (f *fakeAccessChecker) FindAccess(_ context.Context, _, userID uuid.UUID) (domain.PetAccess, error) {
-	return f.access[userID], nil
+func (f *fakePetLinkUseCase) IsLinked(_ context.Context, _, _, _ uuid.UUID) (bool, error) {
+	return f.linked, f.err
 }
 
-func newInternalTestApp(checker PetAccessChecker) *fiber.App {
-	app := fiber.New(fiber.Config{ErrorHandler: func(c *fiber.Ctx, err error) error {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
-	}})
-	h := NewInternalHandler(checker)
+func newInternalTestApp(uc *fakePetLinkUseCase) *fiber.App {
+	app := fiber.New(fiber.Config{ErrorHandler: middleware.ErrorHandler})
+	h := NewInternalHandler(uc)
 	h.RegisterRoutes(app.Group("/internal/v1"))
 	return app
 }
 
 func TestInternalPetLink_BothLinked(t *testing.T) {
-	owner := uuid.New()
-	caregiver := uuid.New()
-	petID := uuid.New()
+	petID, userA, userB := uuid.New(), uuid.New(), uuid.New()
+	app := newInternalTestApp(&fakePetLinkUseCase{linked: true})
 
-	app := newInternalTestApp(&fakeAccessChecker{access: map[uuid.UUID]domain.PetAccess{
-		owner:     {Level: domain.AccessOwner},
-		caregiver: {Level: domain.AccessCaregiver},
-	}})
-
-	req := httptest.NewRequest("GET", "/internal/v1/pets/"+petID.String()+"/link?userA="+owner.String()+"&userB="+caregiver.String(), nil)
+	req := httptest.NewRequest("GET", "/internal/v1/pets/"+petID.String()+"/link?userA="+userA.String()+"&userB="+userB.String(), nil)
 	resp, err := app.Test(req)
 	if err != nil {
 		t.Fatal(err)
@@ -49,21 +43,15 @@ func TestInternalPetLink_BothLinked(t *testing.T) {
 		t.Fatalf("status = %d", resp.StatusCode)
 	}
 	if !decodeLinked(t, resp) {
-		t.Fatal("เจ้าของกับผู้ดูแลของสัตว์เลี้ยงตัวเดียวกัน ต้องได้ linked=true")
+		t.Fatal("use case ตอบ linked=true ต้องได้ linked=true กลับมา")
 	}
 }
 
-func TestInternalPetLink_RejectsWhenOneSideUnrelated(t *testing.T) {
-	owner := uuid.New()
-	stranger := uuid.New()
-	petID := uuid.New()
+func TestInternalPetLink_NotLinked(t *testing.T) {
+	petID, userA, userB := uuid.New(), uuid.New(), uuid.New()
+	app := newInternalTestApp(&fakePetLinkUseCase{linked: false})
 
-	app := newInternalTestApp(&fakeAccessChecker{access: map[uuid.UUID]domain.PetAccess{
-		owner: {Level: domain.AccessOwner},
-		// stranger ไม่มีใน map เลย — FindAccess คืน zero value = AccessNone
-	}})
-
-	req := httptest.NewRequest("GET", "/internal/v1/pets/"+petID.String()+"/link?userA="+owner.String()+"&userB="+stranger.String(), nil)
+	req := httptest.NewRequest("GET", "/internal/v1/pets/"+petID.String()+"/link?userA="+userA.String()+"&userB="+userB.String(), nil)
 	resp, err := app.Test(req)
 	if err != nil {
 		t.Fatal(err)
@@ -72,7 +60,31 @@ func TestInternalPetLink_RejectsWhenOneSideUnrelated(t *testing.T) {
 		t.Fatalf("status = %d (endpoint เองต้องตอบ 200 เสมอ ผลอยู่ใน body.linked)", resp.StatusCode)
 	}
 	if decodeLinked(t, resp) {
-		t.Fatal("stranger ไม่เกี่ยวข้องกับสัตว์เลี้ยงตัวนี้เลย ต้องได้ linked=false")
+		t.Fatal("use case ตอบ linked=false ต้องได้ linked=false กลับมา")
+	}
+}
+
+func TestInternalPetLink_UseCaseErrorBecomes500ViaApperror(t *testing.T) {
+	petID, userA, userB := uuid.New(), uuid.New(), uuid.New()
+	app := newInternalTestApp(&fakePetLinkUseCase{err: errors.New("db ล่ม")})
+
+	req := httptest.NewRequest("GET", "/internal/v1/pets/"+petID.String()+"/link?userA="+userA.String()+"&userB="+userB.String(), nil)
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != fiber.StatusInternalServerError {
+		t.Fatalf("status = %d ต้องการ 500", resp.StatusCode)
+	}
+	var body struct {
+		Error     string `json:"error"`
+		RequestID string `json:"requestId"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Error == "" {
+		t.Fatal("ต้องตอบผ่าน apperror shape เดียวกับ endpoint อื่น (error + requestId)")
 	}
 }
 
@@ -88,7 +100,7 @@ func decodeLinked(t *testing.T, resp *http.Response) bool {
 }
 
 func TestInternalPetLink_RejectsInvalidUUID(t *testing.T) {
-	app := newInternalTestApp(&fakeAccessChecker{access: map[uuid.UUID]domain.PetAccess{}})
+	app := newInternalTestApp(&fakePetLinkUseCase{})
 
 	req := httptest.NewRequest("GET", "/internal/v1/pets/not-a-uuid/link?userA=x&userB=y", nil)
 	resp, err := app.Test(req)

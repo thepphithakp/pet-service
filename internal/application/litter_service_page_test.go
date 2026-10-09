@@ -71,6 +71,27 @@ func TestCreateBatch_RejectsMixedPets(t *testing.T) {
 	}
 }
 
+// TestCreateBatch_RejectsOversizedBatch pin บั๊กที่เจอจาก architecture audit:
+// เดิมจำกัดขนาด batch แค่ที่ LitterHandler เท่านั้น caller ที่เรียก
+// LitterService.CreateBatch ตรงๆ (ไม่ผ่าน HTTP) เลี่ยงขีดจำกัดได้ทั้งหมด
+func TestCreateBatch_RejectsOversizedBatch(t *testing.T) {
+	repo := &fakeLitterRepo{}
+	svc := litterSvc(t, repo, &fakePublisher{}, domain.AccessOwner)
+
+	petID := uuid.New()
+	logs := make([]domain.LitterLog, MaxLitterBatchSize+1)
+	for i := range logs {
+		logs[i] = domain.LitterLog{ID: uuid.New(), PetID: petID, Type: "Poop", Amount: 1}
+	}
+
+	if _, err := svc.CreateBatch(ctxAs(uuid.New()), logs); !errors.Is(err, domain.ErrValidation) {
+		t.Fatalf("ต้องเป็น ErrValidation ได้ %v", err)
+	}
+	if repo.batchArg != nil {
+		t.Error("ห้ามเขียนอะไรเมื่อ batch เกินขนาด")
+	}
+}
+
 // TestCreateBatch_EmptyIsNotAnError
 //
 // C-7: gorm.Create กับ slice ว่างคืน ErrEmptySlice ซึ่งกลายเป็น 500
